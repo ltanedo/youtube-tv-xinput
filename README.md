@@ -22,6 +22,10 @@ than bundling a browser.
   default. Press **Ctrl+Alt+B** (or move the mouse and click **Shield**) for the
   toggle, diagnostics and filter updates. See [native/README.md](native/README.md)
   for coverage, limitations and provenance.
+- **Background playback** — video keeps playing when you Alt-Tab to another
+  app, cover the window, or minimize it. Chromium backgrounding is disabled and
+  a document-start script keeps the page reporting `visible`, so YouTube's
+  player never receives the pause trigger.
 - **Black startup / transition surfaces** — the window, WebView and page are
   black so fullscreen and startup never flash white.
 
@@ -72,7 +76,8 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
                                                     ├─ src/pake_xinput.rs    XInput poll → SendInput to this window
                                                     ├─ pake-adblock/core     adblock-rust engine + bundled lists
                                                     ├─ pake-adblock/ui.js    Shield panel (Ctrl+Alt+B)
-                                                    └─ pake-tv/navigator.js  navigator.userAgent/platform spoof
+                                                    ├─ pake-tv/navigator.js  navigator.userAgent/platform spoof
+                                                    └─ pake-tv/background-play.js  visibility spoof for background playback
 ```
 
 - The window starts on `about:blank`, registers `WebResourceRequested`
@@ -83,6 +88,12 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   taps with `SendInput`. D-pad and stick directions repeat after 350 ms at
   ~9 Hz; buttons fire once per press. State is dropped when the window loses
   focus or a pad disconnects so nothing fires on return.
+- Background playback: WebView2 is launched with
+  `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  --disable-background-timer-throttling --disable-background-media-suspend`,
+  and `native/tv-background-play.js` pins `document.hidden` / `visibilityState`
+  to visible and swallows `visibilitychange` and window `blur` before page
+  listeners see them.
 - Profile data (cookies, blocker cache, settings) lives in `%APPDATA%\YouTubeTV`.
 
 ## Troubleshooting
