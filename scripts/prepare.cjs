@@ -55,16 +55,27 @@ replace('src/app/window.rs', '        .initialization_script(include_str!("../in
 replace('src/app/window.rs', '        .initialization_script(include_str!("../../pake-tv/navigator.js"))',
   '        .initialization_script(include_str!("../../pake-tv/navigator.js"))\n        .initialization_script(include_str!("../../pake-tv/background-play.js"))');
 
-// --- Cargo dependencies ---
-replace('Cargo.toml', 'webview2-com = "0.38"', `webview2-com = "0.38"
-pake-blocker-core = { path = "pake-adblock/core" }
+// --- Cargo dependencies (marker-delimited so feature changes replace, never duplicate, the block) ---
+{
+  const cargo = path.join(runtime, 'Cargo.toml');
+  const begin = '# --- youtube-tv-xinput deps begin ---\n', finish = '# --- youtube-tv-xinput deps end ---\n';
+  const block = begin + `pake-blocker-core = { path = "pake-adblock/core" }
 windows = { version = "=0.61.3", features = [
   "Win32_System_Com",
   "Win32_UI_Shell",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Input_XboxController",
   "Win32_UI_WindowsAndMessaging",
-] }`);
+  "Win32_System_Threading",
+] }
+` + finish;
+  let s = fs.readFileSync(cargo, 'utf8').replace(/\r\n/g, '\n');
+  const b = s.indexOf(begin), e = s.indexOf(finish);
+  if (b !== -1 && e !== -1) s = s.slice(0, b) + s.slice(e + finish.length);
+  const anchor = 'webview2-com = "0.38"\n';
+  if (s.split(anchor).length !== 2) throw Error('Unexpected source anchor: Cargo.toml: ' + anchor.trim());
+  fs.writeFileSync(cargo, s.replace(anchor, anchor + block));
+}
 
 // --- Copy checked-in sources into the runtime ---
 fs.copyFileSync('native/pake_adblock.rs', path.join(runtime, 'src/pake_adblock.rs'));
