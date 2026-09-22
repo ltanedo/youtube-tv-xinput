@@ -4,16 +4,21 @@
 // bridged by polling XInput on a background thread and synthesizing keyboard
 // input for the app window. Keys are only injected while this app owns the
 // foreground window so a paired controller never types into another program.
-use std::{thread, time::{Duration, Instant}};
+//
+// Set YTTV_XINPUT_DEBUG=1 to append a trace to %APPDATA%\YouTubeTV\xinput.log.
+use std::{io::Write, thread, time::{Duration, Instant}};
 use tauri::WebviewWindow;
-use windows::Win32::UI::{
-    Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-        VIRTUAL_KEY, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_NEXT, VK_OEM_2, VK_PRIOR, VK_RETURN, VK_RIGHT,
-        VK_SPACE, VK_UP,
+use windows::Win32::{
+    System::Threading::GetCurrentProcessId,
+    UI::{
+        Input::KeyboardAndMouse::{
+            MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+            KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_DOWN, VK_ESCAPE,
+            VK_LEFT, VK_NEXT, VK_OEM_2, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_UP,
+        },
+        Input::XboxController::{XInputGetState, XINPUT_STATE},
+        WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GetWindowThreadProcessId, GA_ROOT},
     },
-    Input::XboxController::{XInputGetState, XINPUT_STATE},
-    WindowsAndMessaging::GetForegroundWindow,
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
@@ -50,7 +55,7 @@ const MAPPINGS: [KeyMapping; 14] = [
     KeyMapping { flag: BTN_A, vk: VK_RETURN, repeat: false },     // select
     KeyMapping { flag: BTN_B, vk: VK_ESCAPE, repeat: false },     // back
     KeyMapping { flag: BTN_X, vk: VK_SPACE, repeat: false },      // play / pause
-    KeyMapping { flag: BTN_Y, vk: VK_OEM_2, repeat: false },      // '/' search
+    KeyMapping { flag: BTN_Y, vk: VK_OEM_2, repeat: false },      // slash: search
     KeyMapping { flag: START, vk: VK_RETURN, repeat: false },
     KeyMapping { flag: BACK, vk: VK_ESCAPE, repeat: false },
     KeyMapping { flag: L_SHOULDER, vk: VK_PRIOR, repeat: false }, // PageUp
@@ -62,16 +67,64 @@ const MAPPINGS: [KeyMapping; 14] = [
 // Left stick directions reuse the D-pad repeat logic: (positive key, negative key).
 const AXES: [(VIRTUAL_KEY, VIRTUAL_KEY); 2] = [(VK_RIGHT, VK_LEFT), (VK_UP, VK_DOWN)];
 
-fn key_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+/// Keys on the extended keypad block must carry KEYEVENTF_EXTENDEDKEY so the
+/// scan code maps to the navigation key rather than the numeric keypad.
+fn is_extended(vk: VIRTUAL_KEY) -> bool {
+    matches!(vk, VK_UP | VK_DOWN | VK_LEFT | VK_RIGHT | VK_PRIOR | VK_NEXT)
+}
+
+fn key_input(vk: VIRTUAL_KEY, up: bool) -> INPUT {
+    let mut flags = if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) };
+    if is_extended(vk) { flags |= KEYEVENTF_EXTENDEDKEY; }
+    // A real scan code lets Chromium derive KeyboardEvent.code like a physical key.
+    let scan = unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_VSC) } as u16;
     INPUT {
         r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, wScan: 0, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
+        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
     }
 }
 
-fn tap_key(vk: VIRTUAL_KEY) {
-    let inputs = [key_input(vk, KEYBD_EVENT_FLAGS(0)), key_input(vk, KEYEVENTF_KEYUP)];
-    unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+fn tap_key(vk: VIRTUAL_KEY, log: &mut Log) {
+    let inputs = [key_input(vk, false), key_input(vk, true)];
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    log.line(&format!("tap vk=0x{:02X} sent={sent}", vk.0));
+}
+
+/// True while the foreground window is this app: the Tauri window itself, or
+/// any window whose top-level ancestor is ours or belongs to this process
+/// (WebView2 hosts its own child HWNDs inside the Tauri window).
+fn app_is_foreground(hwnd: isize) -> bool {
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() { return false; }
+        if fg.0 as isize == hwnd { return true; }
+        let root = GetAncestor(fg, GA_ROOT);
+        if root.0 as isize == hwnd { return true; }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(root, Some(&mut pid));
+        pid == GetCurrentProcessId()
+    }
+}
+
+/// Optional trace to %APPDATA%\YouTubeTV\xinput.log (YTTV_XINPUT_DEBUG=1).
+struct Log(Option<std::fs::File>);
+
+impl Log {
+    fn open() -> Self {
+        let enabled = matches!(std::env::var("YTTV_XINPUT_DEBUG").as_deref(), Ok("1") | Ok("true"));
+        let file = enabled.then(|| std::env::var_os("APPDATA")).flatten().and_then(|appdata| {
+            let dir = std::path::PathBuf::from(appdata).join("YouTubeTV");
+            std::fs::create_dir_all(&dir).ok()?;
+            std::fs::OpenOptions::new().create(true).append(true).open(dir.join("xinput.log")).ok()
+        });
+        Self(file)
+    }
+    fn line(&mut self, message: &str) {
+        if let Some(file) = self.0.as_mut() {
+            let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+            let _ = writeln!(file, "{ms} {message}");
+        }
+    }
 }
 
 /// Edge/repeat tracker for one digital input (button or stick direction).
@@ -102,16 +155,16 @@ struct Controller { buttons: [Digital; MAPPINGS.len()], axes: [[Digital; 2]; AXE
 impl Controller {
     fn new() -> Self { Self { buttons: [Digital::new(); MAPPINGS.len()], axes: [[Digital::new(); 2]; AXES.len()] } }
 
-    fn poll(&mut self, state: &XINPUT_STATE, now: Instant) {
+    fn poll(&mut self, state: &XINPUT_STATE, now: Instant, log: &mut Log) {
         let buttons = state.Gamepad.wButtons.0;
         for (map, digital) in MAPPINGS.iter().zip(self.buttons.iter_mut()) {
-            if digital.update(buttons & map.flag != 0, map.repeat, now) { tap_key(map.vk); }
+            if digital.update(buttons & map.flag != 0, map.repeat, now) { tap_key(map.vk, log); }
         }
         let sticks = [state.Gamepad.sThumbLX, state.Gamepad.sThumbLY];
         for ((keys, tracker), raw) in AXES.iter().zip(self.axes.iter_mut()).zip(sticks) {
             let value = raw as f32 / 32768.0;
-            if tracker[0].update(value > AXIS_THRESHOLD, true, now) { tap_key(keys.0); }
-            if tracker[1].update(value < -AXIS_THRESHOLD, true, now) { tap_key(keys.1); }
+            if tracker[0].update(value > AXIS_THRESHOLD, true, now) { tap_key(keys.0, log); }
+            if tracker[1].update(value < -AXIS_THRESHOLD, true, now) { tap_key(keys.1, log); }
         }
     }
 
@@ -127,18 +180,31 @@ pub fn start(window: &WebviewWindow) {
         Err(error) => { eprintln!("[Pake] XInput disabled; window handle unavailable: {error}"); return; }
     };
     thread::Builder::new().name("xinput-poll".into()).spawn(move || {
+        let mut log = Log::open();
+        log.line(&format!("xinput bridge started hwnd=0x{hwnd:X} pid={}", unsafe { GetCurrentProcessId() }));
         let mut controllers: Vec<Controller> = (0..MAX_CONTROLLERS).map(|_| Controller::new()).collect();
+        let mut was_connected = [false; MAX_CONTROLLERS as usize];
+        let mut was_focused = false;
         loop {
             let now = Instant::now();
-            let focused = unsafe { GetForegroundWindow() }.0 as isize == hwnd;
+            let focused = app_is_foreground(hwnd);
+            if focused != was_focused {
+                log.line(&format!("foreground={focused} fg=0x{:X}", unsafe { GetForegroundWindow() }.0 as isize));
+                was_focused = focused;
+            }
             for (index, controller) in controllers.iter_mut().enumerate() {
                 let mut state = XINPUT_STATE::default();
-                if unsafe { XInputGetState(index as u32, &mut state) } != 0 || !focused {
+                let connected = unsafe { XInputGetState(index as u32, &mut state) } == 0;
+                if connected != was_connected[index] {
+                    log.line(&format!("controller {index} connected={connected}"));
+                    was_connected[index] = connected;
+                }
+                if !connected || !focused {
                     // Disconnected or unfocused: forget held state so nothing fires on return.
                     controller.release_all();
                     continue;
                 }
-                controller.poll(&state, now);
+                controller.poll(&state, now, &mut log);
             }
             thread::sleep(POLL_INTERVAL);
         }
@@ -176,5 +242,16 @@ mod tests {
         let t0 = Instant::now() + PRESS_COOLDOWN;
         assert!(d.update(true, false, t0));
         assert!(!d.update(true, false, t0 + Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn navigation_keys_are_extended_and_have_scan_codes() {
+        assert!(is_extended(VK_UP) && is_extended(VK_NEXT));
+        assert!(!is_extended(VK_RETURN) && !is_extended(VK_SPACE));
+        let ki = unsafe { key_input(VK_UP, false).Anonymous.ki };
+        assert_ne!(ki.wScan, 0);
+        assert_eq!(ki.dwFlags, KEYEVENTF_EXTENDEDKEY);
+        let up = unsafe { key_input(VK_RETURN, true).Anonymous.ki };
+        assert_eq!(up.dwFlags, KEYEVENTF_KEYUP);
     }
 }

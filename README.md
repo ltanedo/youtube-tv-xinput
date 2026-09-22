@@ -103,7 +103,10 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   `%APPDATA%\YouTubeTV` if an old profile persists.
 - **Controller does nothing** — make sure the app window has focus and the pad
   is in XInput mode (DirectInput-only pads are not supported). Check
-  *Settings → Bluetooth & devices → Game controllers* in Windows.
+  *Settings → Bluetooth & devices → Game controllers* in Windows. To trace the
+  bridge, launch with `YTTV_XINPUT_DEBUG=1` set and read
+  `%APPDATA%\YouTubeTV\xinput.log` — it records controller connect/disconnect,
+  foreground changes, and every key tap sent.
 - **Ads still appear** — open the Shield panel, confirm "Blocking is on" and
   the counters increase, then try **Update filters** and restart. Server-side
   stitched ads are not guaranteed to be removed.
