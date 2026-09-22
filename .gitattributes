@@ -1,0 +1,9 @@
+# Preserve downloaded filter/resource snapshots byte-for-byte, including upstream whitespace.
+native/core/data/* -text -whitespace
+
+# Patches must stay byte-exact for git apply.
+*.patch -text
+# Rust sources copied into the Pake runtime keep LF like upstream.
+native/*.rs text eol=lf
+native/*.js text eol=lf
+native/core/src/* text eol=lf

@@ -1,0 +1,5 @@
+/* Keep every surface black while the leanback app boots or resizes. */
+html, body {
+  background: #000 !important;
+  overflow: hidden !important;
+}

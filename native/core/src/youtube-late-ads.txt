@@ -1,0 +1,7 @@
+! Pake compatibility rules v1: late player responses, independent of downloaded filter cache.
+! The Chromium upstream rules cover startup globals and selected player? responses,
+! but do not consistently remove playerAds or handle next/get_watch and queryless URLs.
+! Use the bundled uBO scriptlets instead of skipping/seeking videos or blocking shared media hosts.
+! Do not use (?:...) here: this resource version splits propsToMatch on colon.
+youtube.com,youtube-nocookie.com##+js(json-prune-fetch-response, playerAds adPlacements adSlots playerResponse.playerAds playerResponse.adPlacements playerResponse.adSlots response.playerResponse.playerAds response.playerResponse.adPlacements response.playerResponse.adSlots [].playerAds [].adPlacements [].adSlots [].playerResponse.playerAds [].playerResponse.adPlacements [].playerResponse.adSlots, , propsToMatch, url:/\/youtubei\/v1\/(player(\/ad_break)?|next|get_watch)(\?|$)/)
+youtube.com,youtube-nocookie.com##+js(json-prune-xhr-response, playerAds adPlacements adSlots playerResponse.playerAds playerResponse.adPlacements playerResponse.adSlots response.playerResponse.playerAds response.playerResponse.adPlacements response.playerResponse.adSlots [].playerAds [].adPlacements [].adSlots [].playerResponse.playerAds [].playerResponse.adPlacements [].playerResponse.adSlots, , propsToMatch, url:/\/youtubei\/v1\/(player(\/ad_break)?|next|get_watch)(\?|$)/)

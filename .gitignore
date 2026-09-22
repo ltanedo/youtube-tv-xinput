@@ -1,2 +1,9 @@
-/node_modules
+# Build outputs
+YouTubeTV.exe
+YouTubeTV.msi
+YouTubeTV.zip
 /dist
+node_modules/
+.build-target/
+native/core/target/
+*.log
