@@ -1,0 +1,65 @@
+diff --git a/src-tauri/src/app/window.rs b/src-tauri/src/app/window.rs
+--- a/src-tauri/src/app/window.rs
++++ b/src-tauri/src/app/window.rs
+@@ -417,7 +417,10 @@
+         .visible(visible)
+         .user_agent(user_agent)
+         .resizable(window_config.resizable)
+-        .maximized(window_config.maximize);
++        .maximized(window_config.maximize)
++        // Keep the native window and WebView surfaces black if WebView2 has
++        // not painted the resized page yet during fullscreen transitions.
++        .background_color(tauri::webview::Color(0, 0, 0, 255));
+ 
+     #[cfg(target_os = "windows")]
+     {
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -56,14 +56,46 @@
+ pub(crate) fn cancel_startup_reveal(revealed: &AtomicBool) {
+     revealed.store(true, Ordering::Release);
+ }
+ 
++// WebView2 can finish loading while its native parent is still hidden, then
++// keep presenting only the window background after the parent is shown. A
++// deactivate/reactivate cycle (for example Alt-Tab) wakes that composition
++// surface. Mirror the relevant visibility notification once after startup so
++// the first frame is presented without moving, resizing, or refocusing the
++// window.
++#[cfg(target_os = "windows")]
++async fn refresh_startup_webview(window: &WebviewWindow) {
++    tokio::time::sleep(tokio::time::Duration::from_millis(75)).await;
++
++    if let Err(error) = window.with_webview(|webview| {
++        let controller = webview.controller();
++        unsafe {
++            let mut bounds = Default::default();
++            let _ = controller.SetIsVisible(false);
++            if controller.Bounds(&mut bounds).is_ok() {
++                let _ = controller.SetBounds(bounds);
++            }
++            let _ = controller.SetIsVisible(true);
++            let _ = controller.NotifyParentWindowPositionChanged();
++        }
++    }) {
++        eprintln!("[Pake] Failed to refresh the startup WebView surface: {error}");
++    }
++
++    // Let responsive pages settle against the now-visible native viewport.
++    let _ = window.eval("window.dispatchEvent(new Event('resize'))");
++}
++
+ fn reveal_startup_window(window: WebviewWindow, init_fullscreen: bool, revealed: &Arc<AtomicBool>) {
+     if !claim_startup_reveal(revealed) {
+         return;
+     }
+ 
+     tauri::async_runtime::spawn(async move {
+         let _ = window.show();
+         reapply_window_icon(&window);
++
++        #[cfg(target_os = "windows")]
++        refresh_startup_webview(&window).await;
+ 
+         // Fixed: Linux fullscreen issue with virtual keyboard
