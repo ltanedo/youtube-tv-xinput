@@ -28,6 +28,14 @@ replace('src/lib.rs', 'mod util;', 'mod util;\n#[cfg(target_os = "windows")]\nmo
 replace('src/lib.rs', '            webview_navigate,', '            webview_navigate,\n            pake_adblock::blocker_status,\n            pake_adblock::blocker_set_enabled,\n            pake_adblock::blocker_update,');
 replace('src/lib.rs', '            let window = set_window(app.app_handle(), &pake_config, &tauri_config)?;', '            #[cfg(target_os = "windows")]\n            pake_adblock::initialize(app.app_handle())?;\n            let window = set_window(app.app_handle(), &pake_config, &tauri_config)?;\n            #[cfg(target_os = "windows")]\n            pake_xinput::start(&window);');
 
+// --- Startup focus: Pake only show()s the window on Windows. A controller-only user cannot click,
+// so after the reveal (and the startup repaint that toggles the WebView2's visibility) bring the
+// window to the foreground and move keyboard focus into the page. ---
+// Anchored on the tail of the reveal block, outside the black-background patch's hunk context,
+// so `git apply --reverse --check` still recognizes that patch as applied.
+replace('src/lib.rs', '        #[cfg(not(target_os = "linux"))]\n        let _ = init_fullscreen;\n    });\n}',
+  '        #[cfg(target_os = "windows")]\n        crate::pake_xinput::activate(&window);\n\n        #[cfg(not(target_os = "linux"))]\n        let _ = init_fullscreen;\n    });\n}');
+
 // --- Ad blocker: start on about:blank, register interception, then navigate ---
 replace('src/app/window.rs', '    let user_agent = config.user_agent.get();', `    #[cfg(target_os = "windows")]
     let blocker_target = if label == "pake" && pake_blocker_core::is_youtube(&window_config.url) {

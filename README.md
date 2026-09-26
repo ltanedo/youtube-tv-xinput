@@ -84,10 +84,16 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   interception and document-created scripts, then navigates to
   `https://www.youtube.com/tv`. Filtering is scoped to HTTPS YouTube origins;
   Google sign-in documents are never blocked.
-- The controller thread polls `XInputGetState` every 16 ms and synthesizes key
-  taps with `SendInput`. D-pad and stick directions repeat after 350 ms at
-  ~9 Hz; buttons fire once per press. State is dropped when the window loses
-  focus or a pad disconnects so nothing fires on return.
+- The controller thread polls `XInputGetState` every 16 ms (empty slots once a
+  second) and synthesizes key taps with `SendInput`. D-pad and stick directions
+  repeat after 350 ms at ~9 Hz; buttons fire once per press. State is dropped
+  when the window loses focus or a pad disconnects so nothing fires on return.
+- Focus is handled for controller-only use: Pake's reveal is patched to bring
+  the window to the foreground and move keyboard focus into the WebView2; the
+  bridge re-focuses the WebView2 whenever the app gains the foreground; and a
+  controller press while the app is *not* foreground activates it during the
+  first 45 s after launch or whenever the Windows shell (desktop, taskbar,
+  Start) is in front. It never takes focus from another app or game.
 - Background playback: WebView2 is launched with
   `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
   --disable-background-timer-throttling --disable-background-media-suspend`,
