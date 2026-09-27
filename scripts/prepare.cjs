@@ -75,6 +75,7 @@ windows = { version = "=0.61.3", features = [
   "Win32_UI_Input_XboxController",
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_Threading",
+  "Win32_System_LibraryLoader",
 ] }
 ` + finish;
   let s = fs.readFileSync(cargo, 'utf8').replace(/\r\n/g, '\n');
