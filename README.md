@@ -84,10 +84,26 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   interception and document-created scripts, then navigates to
   `https://www.youtube.com/tv`. Filtering is scoped to HTTPS YouTube origins;
   Google sign-in documents are never blocked.
-- The controller thread polls `XInputGetState` every 16 ms and synthesizes key
-  taps with `SendInput`. D-pad and stick directions repeat after 350 ms at
-  ~9 Hz; buttons fire once per press. State is dropped when the window loses
-  focus or a pad disconnects so nothing fires on return.
+- The controller thread merges two sources every 16 ms into one logical pad
+  (buttons ORed, strongest stick wins, so a press seen by both never fires
+  twice): the **page's Gamepad API** (`native/tv-gamepad.js` forwards state to
+  the `page_gamepad` command) and **XInput** (empty slots probed once a second).
+  The page source matters because once the GameInput v2+ runtime is installed —
+  many games ship it — Windows gives live controller data only to the process it
+  considers focused. For YouTubeTV that is the WebView2 process owning the page
+  (`msedgewebview2.exe`), so XInput, GameInput and raw HID reads in the app
+  process all return neutral state while the page keeps receiving input. Page
+  state older than 300 ms is ignored, so a reload can't leave a key held. Keys
+  are still synthesized natively with `SendInput`, gated on YouTubeTV being in
+  the foreground. D-pad and stick directions
+  repeat after 350 ms at ~9 Hz; buttons fire once per press. State is dropped
+  when the window loses focus or a pad disconnects so nothing fires on return.
+- Focus is handled for controller-only use: Pake's reveal is patched to bring
+  the window to the foreground and move keyboard focus into the WebView2; the
+  bridge re-focuses the WebView2 whenever the app gains the foreground; and a
+  controller press while the app is *not* foreground activates it during the
+  first 45 s after launch or whenever the Windows shell (desktop, taskbar,
+  Start) is in front. It never takes focus from another app or game.
 - Background playback: WebView2 is launched with
   `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
   --disable-background-timer-throttling --disable-background-media-suspend`,
