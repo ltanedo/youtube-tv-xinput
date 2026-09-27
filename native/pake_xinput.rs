@@ -6,14 +6,13 @@
 // foreground window so a paired controller never types into another program.
 //
 // Two input sources are merged into one logical pad:
-// - GameInput (in-box GameInput.dll) with background input enabled. With the
-//   GameInput v2+ runtime installed (games ship it), XInput and GameInput hand
-//   *neutral* state to any process the runtime does not consider focused, and
-//   it often does not consider us focused because keyboard focus lives in the
-//   WebView2 child window, which belongs to msedgewebview2.exe. Opting into
-//   background input sidesteps that arbitration; our own foreground gate
-//   still decides whether anything is sent.
-// - XInput, for systems without GameInput and for devices it does not expose.
+// - The page's Gamepad API (native/tv-gamepad.js -> `page_gamepad`). Once the
+//   GameInput v2+ runtime is installed (games ship it), Windows gives live
+//   controller data only to the process it considers focused, and for this app
+//   that is the WebView2 process owning the page: native XInput/GameInput reads
+//   in the app process return neutral state, while the page keeps working.
+// - XInput, which works whenever the app process itself holds focus, and on
+//   systems without that runtime.
 //
 // A controller-only user cannot click the page, so the bridge also takes care
 // of focus: it moves keyboard focus into the WebView2 whenever the app gains
@@ -22,7 +21,7 @@
 // (desktop, taskbar, Start) is in front. It never steals from another app.
 //
 // Set YTTV_XINPUT_DEBUG=1 to append a trace to %APPDATA%\YouTubeTV\xinput.log.
-use std::{io::Write, thread, time::{Duration, Instant}};
+use std::{io::Write, sync::Mutex, thread, time::{Duration, Instant}};
 use tauri::WebviewWindow;
 use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC;
 use windows::Win32::{
@@ -51,6 +50,11 @@ const REPEAT_RATE: Duration = Duration::from_millis(110);
 const STARTUP_WAKE_GRACE: Duration = Duration::from_secs(45);
 const WAKE_RETRY: Duration = Duration::from_millis(750);
 const MAX_CONTROLLERS: u32 = 4;
+// Page-reported pad state. The page sends a heartbeat every 100 ms while input
+// is held; older state is ignored so a reload or a closed page can never leave
+// a key held down.
+const PAGE_PAD_FRESH: Duration = Duration::from_millis(300);
+static PAGE_PAD: Mutex<Option<(PadState, Instant)>> = Mutex::new(None);
 
 // XINPUT_GAMEPAD_* button masks; also the layout of the merged pad state.
 const D_UP: u16 = 0x0001;
@@ -103,100 +107,39 @@ const SHELL_CLASSES: [&str; 6] = [
     "XamlExplorerHostIslandWindow",
 ];
 
-/// Minimal binding to the in-box GameInput v0 interface (GameInput.dll).
-/// Only the calls the bridge needs; vtable slots follow GameInput.h (v0).
-mod gameinput {
-    use std::ffi::c_void;
-    use windows::{
-        core::{s, w},
-        Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32},
-    };
-
-    const KIND_GAMEPAD: u32 = 0x0004_0000;
-    const ENABLE_BACKGROUND_INPUT: u32 = 0x0000_0040;
-    const UNKNOWN_RELEASE: usize = 2;
-    const INPUT_GET_CURRENT_READING: usize = 4;
-    const INPUT_SET_FOCUS_POLICY: usize = 21;
-    const READING_GET_GAMEPAD_STATE: usize = 22;
-
-    #[repr(C)]
-    #[derive(Default, Clone, Copy, Debug)]
-    pub struct GamepadState {
-        pub buttons: u32,
-        pub left_trigger: f32,
-        pub right_trigger: f32,
-        pub left_x: f32,
-        pub left_y: f32,
-        pub right_x: f32,
-        pub right_y: f32,
-    }
-
-    type CreateFn = unsafe extern "system" fn(*mut *mut c_void) -> i32;
-    type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
-    type GetReadingFn = unsafe extern "system" fn(*mut c_void, u32, *mut c_void, *mut *mut c_void) -> i32;
-    type SetFocusPolicyFn = unsafe extern "system" fn(*mut c_void, u32);
-    type GetGamepadStateFn = unsafe extern "system" fn(*mut c_void, *mut GamepadState) -> bool;
-
-    unsafe fn slot<T: Copy>(object: *mut c_void, index: usize) -> T {
-        let vtable = *(object as *const *const *const c_void);
-        std::mem::transmute_copy(&*vtable.add(index))
-    }
-
-    /// Owned IGameInput pointer. Created and used only on the polling thread.
-    pub struct GameInput(*mut c_void);
-
-    impl GameInput {
-        pub fn create() -> Result<Self, String> {
-            unsafe {
-                // System32 only: never pick up a GameInput.dll planted next to the exe.
-                let module = LoadLibraryExW(w!("GameInput.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32)
-                    .map_err(|error| format!("GameInput.dll unavailable: {error}"))?;
-                let create = GetProcAddress(module, s!("GameInputCreate")).ok_or("GameInputCreate export missing")?;
-                let create: CreateFn = std::mem::transmute(create);
-                let mut object = std::ptr::null_mut();
-                let hr = create(&mut object);
-                if hr < 0 || object.is_null() {
-                    return Err(format!("GameInputCreate failed hr=0x{hr:08X}"));
-                }
-                slot::<SetFocusPolicyFn>(object, INPUT_SET_FOCUS_POLICY)(object, ENABLE_BACKGROUND_INPUT);
-                Ok(Self(object))
-            }
-        }
-
-        /// Latest reading from any gamepad, or None when no gamepad has reported.
-        pub fn gamepad(&self) -> Option<GamepadState> {
-            unsafe {
-                let mut reading = std::ptr::null_mut();
-                let hr = slot::<GetReadingFn>(self.0, INPUT_GET_CURRENT_READING)(self.0, KIND_GAMEPAD, std::ptr::null_mut(), &mut reading);
-                if hr < 0 || reading.is_null() { return None; }
-                let mut state = GamepadState::default();
-                let ok = slot::<GetGamepadStateFn>(reading, READING_GET_GAMEPAD_STATE)(reading, &mut state);
-                slot::<ReleaseFn>(reading, UNKNOWN_RELEASE)(reading);
-                ok.then_some(state)
-            }
-        }
-    }
-
-    impl Drop for GameInput {
-        fn drop(&mut self) {
-            unsafe { slot::<ReleaseFn>(self.0, UNKNOWN_RELEASE)(self.0); }
-        }
-    }
+/// Standard-mapping Gamepad API buttons (bit n = buttons[n].pressed) -> XInput masks.
+/// Triggers (6, 7) and the guide button (16) are not mapped.
+fn standard_buttons(bits: u32) -> u16 {
+    const MAP: [(u32, u16); 14] = [
+        (0, BTN_A), (1, BTN_B), (2, BTN_X), (3, BTN_Y), (4, L_SHOULDER), (5, R_SHOULDER),
+        (8, BACK), (9, START), (10, L_THUMB), (11, R_THUMB),
+        (12, D_UP), (13, D_DOWN), (14, D_LEFT), (15, D_RIGHT),
+    ];
+    MAP.iter().filter(|(bit, _)| bits & (1 << bit) != 0).fold(0, |mask, (_, xi)| mask | xi)
 }
 
-/// GameInputGamepadButtons -> XINPUT_GAMEPAD_* masks.
-fn gameinput_buttons(buttons: u32) -> u16 {
-    const MAP: [(u32, u16); 14] = [
-        (0x0001, START), (0x0002, BACK), (0x0004, BTN_A), (0x0008, BTN_B),
-        (0x0010, BTN_X), (0x0020, BTN_Y), (0x0040, D_UP), (0x0080, D_DOWN),
-        (0x0100, D_LEFT), (0x0200, D_RIGHT), (0x0400, L_SHOULDER), (0x0800, R_SHOULDER),
-        (0x1000, L_THUMB), (0x2000, R_THUMB),
-    ];
-    MAP.iter().filter(|(gi, _)| buttons & gi != 0).fold(0, |mask, (_, xi)| mask | xi)
+/// Controller state read by the page's Gamepad API (native/tv-gamepad.js).
+/// Keys are still sent natively, and only while this app is in the foreground.
+#[tauri::command]
+pub fn page_gamepad(window: WebviewWindow, buttons: u32, x: f32, y: f32) {
+    if window.label() != "pake" { return; }
+    let pad = PadState {
+        buttons: standard_buttons(buttons),
+        x: if x.is_finite() { x.clamp(-1.0, 1.0) } else { 0.0 },
+        y: if y.is_finite() { y.clamp(-1.0, 1.0) } else { 0.0 },
+    };
+    if let Ok(mut slot) = PAGE_PAD.lock() { *slot = Some((pad, Instant::now())); }
+}
+
+/// Fresh page-reported state, if any.
+fn page_pad(now: Instant) -> Option<PadState> {
+    let slot = PAGE_PAD.lock().ok()?;
+    let (pad, at) = (*slot)?;
+    (now.saturating_duration_since(at) < PAGE_PAD_FRESH).then_some(pad)
 }
 
 /// One logical pad: buttons ORed across sources, sticks from whichever source
-/// deflects furthest, so a pad visible to both stacks never fires twice.
+/// deflects furthest, so a pad visible to both sources never fires twice.
 #[derive(Default, Clone, Copy, Debug)]
 struct PadState { buttons: u16, x: f32, y: f32 }
 
@@ -209,9 +152,6 @@ impl PadState {
     fn merge_xinput(&mut self, state: &XINPUT_STATE) {
         let pad = &state.Gamepad;
         self.merge(pad.wButtons.0, pad.sThumbLX as f32 / 32768.0, pad.sThumbLY as f32 / 32768.0);
-    }
-    fn merge_gameinput(&mut self, state: &gameinput::GamepadState) {
-        self.merge(gameinput_buttons(state.buttons), state.left_x, state.left_y);
     }
     /// Any button or stick deflection: used only to decide whether to wake the window.
     fn active(&self) -> bool {
@@ -364,13 +304,9 @@ pub fn start(window: &WebviewWindow) {
         let mut log = Log::open();
         let started = Instant::now();
         log.line(&format!("xinput bridge started hwnd=0x{hwnd:X} pid={}", unsafe { GetCurrentProcessId() }));
-        let gameinput = match gameinput::GameInput::create() {
-            Ok(input) => { log.line("gameinput: ready, background input enabled"); Some(input) }
-            Err(error) => { log.line(&format!("gameinput: {error}; using XInput only")); None }
-        };
         let mut slots: Vec<XInputSlot> = (0..MAX_CONTROLLERS).map(|_| XInputSlot { connected: false, next_probe: started }).collect();
         let mut controller = Controller::new();
-        let mut gameinput_reporting = false;
+        let mut page_live = false;
         let mut was_foreground = Foreground::Other;
         let mut last_wake = started - WAKE_RETRY;
         loop {
@@ -395,14 +331,12 @@ pub fn start(window: &WebviewWindow) {
                 }
                 if connected { pad.merge_xinput(&state); } else { slot.next_probe = now + EMPTY_SLOT_PROBE; }
             }
-            if let Some(input) = &gameinput {
-                let reading = input.gamepad();
-                if reading.is_some() != gameinput_reporting {
-                    gameinput_reporting = reading.is_some();
-                    log.line(&format!("gameinput gamepad reporting={gameinput_reporting}"));
-                }
-                if let Some(state) = reading { pad.merge_gameinput(&state); }
+            let page = page_pad(now);
+            if page.is_some() != page_live {
+                page_live = page.is_some();
+                log.line(&format!("page gamepad live={page_live}"));
             }
+            if let Some(state) = page { pad.merge(state.buttons, state.x, state.y); }
 
             if fg == Foreground::Ours {
                 for vk in controller.poll(&pad, now) { tap_key(vk, &mut log); }
@@ -467,12 +401,21 @@ mod tests {
     }
 
     #[test]
-    fn gameinput_buttons_map_to_xinput_masks() {
-        assert_eq!(gameinput_buttons(0x0004), BTN_A);
-        assert_eq!(gameinput_buttons(0x0008 | 0x0040), BTN_B | D_UP);
-        assert_eq!(gameinput_buttons(0x0001 | 0x0002), START | BACK);
-        assert_eq!(gameinput_buttons(0x0400 | 0x2000), L_SHOULDER | R_THUMB);
-        assert_eq!(gameinput_buttons(0x4000 | 0x8000), 0); // paddles are ignored
+    fn standard_gamepad_buttons_map_to_xinput_masks() {
+        assert_eq!(standard_buttons(1 << 0), BTN_A);
+        assert_eq!(standard_buttons((1 << 1) | (1 << 12)), BTN_B | D_UP);
+        assert_eq!(standard_buttons((1 << 8) | (1 << 9)), BACK | START);
+        assert_eq!(standard_buttons((1 << 14) | (1 << 15)), D_LEFT | D_RIGHT);
+        assert_eq!(standard_buttons((1 << 6) | (1 << 7) | (1 << 16)), 0); // triggers + guide
+    }
+
+    #[test]
+    fn page_state_expires() {
+        let now = Instant::now();
+        *PAGE_PAD.lock().unwrap() = Some((PadState { buttons: BTN_A, x: 0.0, y: 0.0 }, now));
+        assert_eq!(page_pad(now).map(|p| p.buttons), Some(BTN_A));
+        assert!(page_pad(now + PAGE_PAD_FRESH).is_none());
+        *PAGE_PAD.lock().unwrap() = None;
     }
 
     #[test]
@@ -484,7 +427,7 @@ mod tests {
         assert_eq!((pad.x, pad.y), (-0.8, -0.2));
         assert!(pad.active());
 
-        // The same A press seen by both stacks produces a single Enter.
+        // The same A press seen by both sources produces a single Enter.
         let mut controller = Controller::new();
         let t0 = Instant::now() + PRESS_COOLDOWN;
         let keys = controller.poll(&PadState { buttons: BTN_A, x: 0.0, y: 0.0 }, t0);

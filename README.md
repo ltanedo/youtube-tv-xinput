@@ -84,17 +84,18 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   interception and document-created scripts, then navigates to
   `https://www.youtube.com/tv`. Filtering is scoped to HTTPS YouTube origins;
   Google sign-in documents are never blocked.
-- The controller thread polls two sources every 16 ms and merges them into one
-  logical pad (buttons ORed, strongest stick wins, so a press seen by both
-  never fires twice): **GameInput** (the in-box `GameInput.dll`, loaded from
-  System32, with `GameInputEnableBackgroundInput`) and **XInput** (empty slots
-  probed once a second). GameInput matters because once the GameInput v2+
-  runtime is installed — many games ship it — both XInput and GameInput hand
-  *neutral* state to any process the runtime doesn't consider focused, and
-  YouTubeTV often isn't: its keyboard focus lives in the WebView2 child window,
-  which belongs to `msedgewebview2.exe`. Opting into background input sidesteps
-  that; the bridge's own foreground gate still decides whether keys are sent.
-  Key taps are synthesized with `SendInput`. D-pad and stick directions
+- The controller thread merges two sources every 16 ms into one logical pad
+  (buttons ORed, strongest stick wins, so a press seen by both never fires
+  twice): the **page's Gamepad API** (`native/tv-gamepad.js` forwards state to
+  the `page_gamepad` command) and **XInput** (empty slots probed once a second).
+  The page source matters because once the GameInput v2+ runtime is installed —
+  many games ship it — Windows gives live controller data only to the process it
+  considers focused. For YouTubeTV that is the WebView2 process owning the page
+  (`msedgewebview2.exe`), so XInput, GameInput and raw HID reads in the app
+  process all return neutral state while the page keeps receiving input. Page
+  state older than 300 ms is ignored, so a reload can't leave a key held. Keys
+  are still synthesized natively with `SendInput`, gated on YouTubeTV being in
+  the foreground. D-pad and stick directions
   repeat after 350 ms at ~9 Hz; buttons fire once per press. State is dropped
   when the window loses focus or a pad disconnects so nothing fires on return.
 - Focus is handled for controller-only use: Pake's reveal is patched to bring

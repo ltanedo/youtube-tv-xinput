@@ -63,6 +63,13 @@ replace('src/app/window.rs', '        .initialization_script(include_str!("../in
 replace('src/app/window.rs', '        .initialization_script(include_str!("../../pake-tv/navigator.js"))',
   '        .initialization_script(include_str!("../../pake-tv/navigator.js"))\n        .initialization_script(include_str!("../../pake-tv/background-play.js"))');
 
+// --- Page gamepad bridge: the Gamepad API in the WebView2 process sees the controller when the
+// app process does not (see native/tv-gamepad.js); forward its state to pake_xinput. ---
+replace('src/app/window.rs', '        .initialization_script(include_str!("../../pake-tv/background-play.js"))',
+  '        .initialization_script(include_str!("../../pake-tv/background-play.js"))\n        .initialization_script(include_str!("../../pake-tv/gamepad.js"))');
+replace('src/lib.rs', '            pake_adblock::blocker_update,',
+  '            pake_adblock::blocker_update,\n            pake_xinput::page_gamepad,');
+
 // --- Cargo dependencies (marker-delimited so feature changes replace, never duplicate, the block) ---
 {
   const cargo = path.join(runtime, 'Cargo.toml');
@@ -75,7 +82,6 @@ windows = { version = "=0.61.3", features = [
   "Win32_UI_Input_XboxController",
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_Threading",
-  "Win32_System_LibraryLoader",
 ] }
 ` + finish;
   let s = fs.readFileSync(cargo, 'utf8').replace(/\r\n/g, '\n');
@@ -94,6 +100,7 @@ fs.mkdirSync(path.join(runtime, 'pake-tv'), {recursive:true});
 fs.copyFileSync('native/ui.js', path.join(runtime, 'pake-adblock/ui.js'));
 fs.copyFileSync('native/tv-navigator.js', path.join(runtime, 'pake-tv/navigator.js'));
 fs.copyFileSync('native/tv-background-play.js', path.join(runtime, 'pake-tv/background-play.js'));
+fs.copyFileSync('native/tv-gamepad.js', path.join(runtime, 'pake-tv/gamepad.js'));
 fs.cpSync('native/core', path.join(runtime, 'pake-adblock/core'), {recursive:true, filter: p => !p.split(path.sep).includes('target')});
 if (fs.existsSync('native/runtime-Cargo.lock')) fs.copyFileSync('native/runtime-Cargo.lock', path.join(runtime, 'Cargo.lock'));
 if (fs.existsSync('native/runtime-package-lock.json')) fs.copyFileSync('native/runtime-package-lock.json', path.join(pake, 'package-lock.json'));
