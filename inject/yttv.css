@@ -3,3 +3,14 @@ html, body {
   background: #000 !important;
   overflow: hidden !important;
 }
+
+/* Ultrawide fill (native/tv-player.js sets data-pake-fill): cover the screen
+   with the playing video instead of pillarboxing it, cropping top and bottom.
+   The player rewrites the video's inline box on every resize, hence !important. */
+html[data-pake-fill] body.WEB_PAGE_TYPE_WATCH video.html5-main-video {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: cover !important;
+}
