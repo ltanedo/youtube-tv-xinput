@@ -11,8 +11,10 @@
 //   the same state the on-screen CC button shows, and turns back on the last
 //   language used. The choice is re-applied to every video, and changes made
 //   with the CC button are adopted as the new choice.
+// - Frame step (< / >, also , / .). The first tap pauses; each further tap
+//   (or holding the key) moves one frame back or forward. Play resumes as usual.
 //
-// Both choices live in localStorage, which is kept in the app profile
+// The fill and subtitle choices live in localStorage, which is kept in the app profile
 // (%APPDATA%\YouTubeTV), so they survive restarts.
 (() => {
   if (window !== window.top || window.__pakePlayerKeys) return;
@@ -128,17 +130,105 @@
   window.addEventListener("pake:aspect-toggle", toggleAspect);
   window.addEventListener("pake:captions-toggle", toggleCaptions);
 
-  // Plain letter keys act only while watching and outside text fields, so they
-  // never swallow typing on the search page.
-  const KEYS = { KeyD: toggleAspect, KeyC: toggleCaptions };
+  // Frame rate from the player's stats ("1920x1080@24 / ..."); 30 if unknown.
+  const frameRate = (p) => {
+    try { return +(p.getStatsForNerds().resolution.match(/@(\d+)/) || [])[1] || 30; } catch (_) { return 30; }
+  };
+  let stepTarget = 0;
+  const stepFrame = (direction) => {
+    const p = watching() && player();
+    const video = document.querySelector("video.html5-main-video");
+    if (!p?.seekTo || !video) return;
+    // Hide the paused overlay (title, controls, related videos) so the frame
+    // is visible; showOverlay() brings it back. Stepping again while a resume
+    // is pending cancels it, so the pause below doesn't show the overlay.
+    stopOverlayTimers();
+    document.documentElement.setAttribute("data-pake-stepping", "");
+    if (!video.paused) { p.pauseVideo(); toast("Paused: frame step"); return; }
+    // Step relative to the current position (frame timestamps needn't be
+    // multiples of 1/fps); chain from the last target while a seek is pending
+    // so fast taps aren't lost.
+    const base = video.seeking ? stepTarget : video.currentTime;
+    stepTarget = Math.min(Math.max(base + direction / frameRate(p), 0), video.duration || Infinity);
+    p.seekTo(stepTarget, true);
+  };
+  const stepBack = () => stepFrame(-1);
+  const stepForward = () => stepFrame(1);
+
+  // Overlay around frame step. Resuming playback from step mode keeps the
+  // overlay hidden until YouTube's own controls have auto-hidden, then drops
+  // data-pake-stepping so nothing flashes up. Other input shows it right away.
+  const stepping = () => document.documentElement.hasAttribute("data-pake-stepping");
+  let resumeTimer = 0;
+  let enterTimer = 0;
+  function stopOverlayTimers() {
+    clearInterval(resumeTimer);
+    clearTimeout(enterTimer);
+    resumeTimer = enterTimer = 0;
+  }
+  const showOverlay = () => {
+    stopOverlayTimers();
+    document.documentElement.removeAttribute("data-pake-stepping");
+  };
+  // YouTube's controls are up while its progress bar is displayed (a tag
+  // name, not an obfuscated class, so it survives YouTube deploys).
+  const controlsShowing = () => {
+    const bar = document.querySelector("ytlr-watch-default ytlr-progress-bar");
+    return !!bar && getComputedStyle(bar).display !== "none";
+  };
+  const resumeHidden = () => {
+    clearTimeout(enterTimer);
+    enterTimer = 0;
+    if (resumeTimer) return;
+    const started = Date.now();
+    let hiddenSince = 0;
+    resumeTimer = setInterval(() => {
+      const now = Date.now();
+      if (controlsShowing()) hiddenSince = 0;
+      else hiddenSince ||= now;
+      // Controls settled hidden (not a transient between states); if that is
+      // never seen, give the overlay back after 8 s rather than keep it hidden.
+      if ((hiddenSince && now - hiddenSince >= 600 && now - started >= 500) || now - started > 8000) showOverlay();
+    }, 150);
+  };
+  document.addEventListener("play", () => { if (stepping()) resumeHidden(); }, true);
+  document.addEventListener("pause", () => { if (resumeTimer) showOverlay(); }, true);
+  for (const type of ["loadedmetadata", "emptied"]) document.addEventListener(type, showOverlay, true);
+  window.addEventListener("pointerdown", showOverlay, true);
+
+  // A key pressed in step mode that isn't one of our shortcuts. Space / X
+  // (play-pause) resumes with the overlay still hidden. Enter / A does too when
+  // it starts playback (the focused play button); otherwise it may activate
+  // something else, so the overlay is shown. Anything else shows it now.
+  // Controller buttons arrive here as keys from the native bridge.
+  const MODIFIERS = new Set(["ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]);
+  const stepModeKey = (event) => {
+    if (!stepping() || MODIFIERS.has(event.code)) return;
+    const video = document.querySelector("video.html5-main-video");
+    const paused = video?.paused && !resumeTimer;
+    if (paused && (event.code === "Space" || event.key === "MediaPlayPause")) return;
+    if (paused && (event.code === "Enter" || event.code === "NumpadEnter")) {
+      clearTimeout(enterTimer);
+      enterTimer = setTimeout(() => { if (!resumeTimer) showOverlay(); }, 400);
+      return;
+    }
+    showOverlay();
+  };
+
+  // Plain keys act only while watching and outside text fields, so they
+  // never swallow typing on the search page. Shift is allowed: < and > are
+  // Shift+Comma / Shift+Period.
+  const KEYS = { KeyD: toggleAspect, KeyC: toggleCaptions, Comma: stepBack, Period: stepForward };
+  const REPEATS = new Set([stepBack, stepForward]);
   const shortcut = (event) => {
     const action = KEYS[event.code];
+    if (event.type === "keydown" && !action) stepModeKey(event);
     if (!action || event.ctrlKey || event.altKey || event.metaKey || !watching()) return;
     const target = event.target;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (event.type === "keydown" && !event.repeat) action();
+    if (event.type === "keydown" && (!event.repeat || REPEATS.has(action))) action();
   };
   window.addEventListener("keydown", shortcut, true);
   window.addEventListener("keyup", shortcut, true);

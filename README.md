@@ -38,6 +38,12 @@ than bundling a browser.
   on-screen CC button and turns back on the last language you used. The choice
   is applied to every video and kept across restarts; using the CC button
   updates it too.
+- **Frame-by-frame stepping** — while a video plays, tap **<** or **>** (also
+  **,** / **.**) to pause, then keep tapping (or hold) to step one frame back or
+  forward. The paused overlay is hidden while stepping so the frame is visible,
+  and subtitles stay at their normal position near the bottom.
+  Play (Space / X, or Enter / A on the play button) resumes straight into
+  playback without the overlay popping up; any other key brings it back.
 - **Black startup / transition surfaces** — the window, WebView and page are
   black so fullscreen and startup never flash white.
 
@@ -92,7 +98,7 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
                                                     ├─ pake-adblock/ui.js    Shield panel (Ctrl+Alt+B)
                                                     ├─ pake-tv/navigator.js  navigator.userAgent/platform spoof
                                                     ├─ pake-tv/background-play.js  visibility spoof for background playback
-                                                    └─ pake-tv/player.js     D / C shortcuts: ultrawide fill, subtitles
+                                                    └─ pake-tv/player.js     D / C / < > shortcuts: ultrawide fill, subtitles, frame step
 ```
 
 - The window starts on `about:blank`, registers `WebResourceRequested`
@@ -137,6 +143,18 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   asynchronously); after that, the player's state is adopted as the saved
   choice. Both choices live in the page's `localStorage`, stored in the app
   profile.
+- Frame step: the first tap calls the player's `pauseVideo()`; each further
+  tap calls `seekTo(currentTime ± 1/fps)`, with the frame rate read from the
+  player's stats (`1920x1080@24`, default 30). Steps are relative, since frame
+  timestamps needn't be multiples of 1/fps, and chain from the last target while
+  a seek is pending. `data-pake-stepping` on `<html>` hides `ytlr-watch-default`
+  (the paused overlay). Resuming from step mode keeps it set until YouTube's
+  controls have auto-hidden (its `ytlr-progress-bar` stays `display: none` for
+  600 ms; 8 s fallback), so the overlay never flashes up. Any other key, a
+  click, pausing again or the next video shows the overlay right away; modifier
+  keys (Shift for < and >) and the D / C shortcuts leave it as is. In step mode
+  a CSS rule also pins captions at `bottom: 5%`; YouTube otherwise lifts them to
+  `bottom: 19rem` above its (now hidden) control bar.
 - LT and RT are read from the page Gamepad API in `native/tv-gamepad.js`; they
   are not mapped to keys natively.
 - Profile data (cookies, blocker cache, settings) lives in `%APPDATA%\YouTubeTV`.

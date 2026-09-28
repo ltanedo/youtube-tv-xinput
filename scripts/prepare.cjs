@@ -1,6 +1,7 @@
 // Reproducible, version/anchor-checked edits to the project-local Pake runtime.
 // Adds: native ad blocker (WebView2 request interception + scriptlets), XInput
-// controller bridge, TV navigator spoof, background playback, ultrawide fill, subtitle toggle, and the black-background startup patch.
+// controller bridge, TV navigator spoof, background playback, player shortcuts (ultrawide fill,
+// subtitles, frame step), and the black-background startup patch.
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
@@ -70,8 +71,8 @@ replace('src/app/window.rs', '        .initialization_script(include_str!("../..
 replace('src/lib.rs', '            pake_adblock::blocker_update,',
   '            pake_adblock::blocker_update,\n            pake_xinput::page_gamepad,');
 
-// --- Player shortcuts: ultrawide fill (cover wider-than-16:9 screens instead of pillarboxing)
-// and subtitles on/off (see native/tv-player.js; the fill CSS rule lives in inject/yttv.css). ---
+// --- Player shortcuts: ultrawide fill (cover wider-than-16:9 screens instead of pillarboxing),
+// subtitles on/off, and frame step (see native/tv-player.js; CSS rules live in inject/yttv.css). ---
 replace('src/app/window.rs', '        .initialization_script(include_str!("../../pake-tv/gamepad.js"))',
   '        .initialization_script(include_str!("../../pake-tv/gamepad.js"))\n        .initialization_script(include_str!("../../pake-tv/player.js"))');
 
@@ -110,4 +111,4 @@ fs.copyFileSync('native/tv-player.js', path.join(runtime, 'pake-tv/player.js'));
 fs.cpSync('native/core', path.join(runtime, 'pake-adblock/core'), {recursive:true, filter: p => !p.split(path.sep).includes('target')});
 if (fs.existsSync('native/runtime-Cargo.lock')) fs.copyFileSync('native/runtime-Cargo.lock', path.join(runtime, 'Cargo.lock'));
 if (fs.existsSync('native/runtime-package-lock.json')) fs.copyFileSync('native/runtime-package-lock.json', path.join(pake, 'package-lock.json'));
-console.log('Prepared local Pake with native ad blocker, XInput bridge, TV navigator spoof, background playback, ultrawide fill, and subtitle toggle.');
+console.log('Prepared local Pake with native ad blocker, XInput bridge, TV navigator spoof, background playback, and player shortcuts.');
