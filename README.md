@@ -26,6 +26,18 @@ than bundling a browser.
   app, cover the window, or minimize it. Chromium backgrounding is disabled and
   a document-start script keeps the page reporting `visible`, so YouTube's
   player never receives the pause trigger.
+- **Ultrawide fill** — on screens wider than 16:9 (e.g. 3440×1440), 16:9 videos
+  are scaled to cover the whole screen instead of showing black bars left and
+  right; the top and bottom are cropped. It applies only to landscape video that
+  would otherwise be pillarboxed (Shorts, 4:3 and native 21:9 are left alone).
+  Press **D** while a video plays, or **RT** on the controller, to switch
+  between Fill and Fit; the choice is kept across restarts. The browse UI stays
+  16:9 — YouTube lays it out on a fixed 1280×720 grid.
+- **Subtitles shortcut** — press **C** while a video plays, or **LT** on the
+  controller, to turn subtitles on or off. It switches the same setting as the
+  on-screen CC button and turns back on the last language you used. The choice
+  is applied to every video and kept across restarts; using the CC button
+  updates it too.
 - **Black startup / transition surfaces** — the window, WebView and page are
   black so fullscreen and startup never flash white.
 
@@ -39,6 +51,8 @@ than bundling a browser.
 | X                        | Space         | Play / pause             |
 | Y                        | `/`           | Search                   |
 | LB / RB                  | PageUp / Down | Seek / scroll            |
+| LT                       | —             | Subtitles on / off       |
+| RT                       | —             | Toggle ultrawide Fill / Fit |
 
 The mapping lives in [`native/pake_xinput.rs`](native/pake_xinput.rs) (`MAPPINGS`).
 
@@ -77,7 +91,8 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
                                                     ├─ pake-adblock/core     adblock-rust engine + bundled lists
                                                     ├─ pake-adblock/ui.js    Shield panel (Ctrl+Alt+B)
                                                     ├─ pake-tv/navigator.js  navigator.userAgent/platform spoof
-                                                    └─ pake-tv/background-play.js  visibility spoof for background playback
+                                                    ├─ pake-tv/background-play.js  visibility spoof for background playback
+                                                    └─ pake-tv/player.js     D / C shortcuts: ultrawide fill, subtitles
 ```
 
 - The window starts on `about:blank`, registers `WebResourceRequested`
@@ -110,6 +125,20 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   and `native/tv-background-play.js` pins `document.hidden` / `visibilityState`
   to visible and swallows `visibilitychange` and window `blur` before page
   listeners see them.
+- Ultrawide fill: the leanback player sizes the `<video>` to the stream's aspect
+  ratio inside a full-window player. `native/tv-player.js` compares that ratio
+  with the window's and sets `data-pake-fill` on `<html>`; a rule in
+  `inject/yttv.css`, scoped to `body.WEB_PAGE_TYPE_WATCH`, then sizes the video
+  to the viewport with `object-fit: cover`.
+- Subtitles: C switches the player's caption track (`setOption("captions",
+  "track", …)`), not `toggleSubtitlesOn()`, which only hides the captions and
+  leaves the CC button showing them as on. The on/off choice is saved and
+  enforced for the first 3 s of each video (the player loads caption state
+  asynchronously); after that, the player's state is adopted as the saved
+  choice. Both choices live in the page's `localStorage`, stored in the app
+  profile.
+- LT and RT are read from the page Gamepad API in `native/tv-gamepad.js`; they
+  are not mapped to keys natively.
 - Profile data (cookies, blocker cache, settings) lives in `%APPDATA%\YouTubeTV`.
 
 ## Troubleshooting

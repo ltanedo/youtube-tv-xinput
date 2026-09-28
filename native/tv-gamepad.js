@@ -9,8 +9,11 @@
   if (window !== window.top || window.__pakeGamepadBridge) return;
   window.__pakeGamepadBridge = true;
 
+  // Triggers are unmapped natively; they drive the player shortcuts in tv-player.js.
+  const TRIGGER_EVENTS = [[1 << 6, "pake:captions-toggle"], [1 << 7, "pake:aspect-toggle"]];
   let last = "";
   let lastSent = 0;
+  let lastButtons = 0;
   const poll = () => {
     const invoke = window.__TAURI__?.core?.invoke;
     if (!invoke || !navigator.getGamepads) return;
@@ -27,6 +30,10 @@
       if (Math.abs(ay) > Math.abs(y)) y = -ay; // Gamepad API is +down; the bridge uses +up
     }
     buttons >>>= 0;
+    for (const [bit, type] of TRIGGER_EVENTS) {
+      if (buttons & bit && !(lastButtons & bit)) window.dispatchEvent(new Event(type));
+    }
+    lastButtons = buttons;
     const active = buttons !== 0 || Math.abs(x) > 0.3 || Math.abs(y) > 0.3;
     const state = `${buttons}|${x.toFixed(2)}|${y.toFixed(2)}`;
     const now = performance.now();
