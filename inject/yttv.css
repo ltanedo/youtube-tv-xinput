@@ -14,3 +14,19 @@ html[data-pake-fill] body.WEB_PAGE_TYPE_WATCH video.html5-main-video {
   height: 100vh !important;
   object-fit: cover !important;
 }
+
+/* Frame step (native/tv-player.js sets data-pake-stepping): hide the paused
+   overlay so the frame is visible; captions live in the player and stay. */
+html[data-pake-stepping] body.WEB_PAGE_TYPE_WATCH ytlr-watch-default {
+  opacity: 0 !important;
+}
+
+/* While paused with controls up, YouTube lifts captions above the control bar
+   (bottom: 19rem). With the overlay hidden in step mode that leaves them
+   mid-screen, so keep them at their normal playback position. */
+html[data-pake-stepping] body.WEB_PAGE_TYPE_WATCH .ytp-caption-window-bottom,
+html[data-pake-stepping] body.WEB_PAGE_TYPE_WATCH .ytp-caption-window-rollup {
+  bottom: 5% !important;
+  top: auto !important;
+  transform: none !important;
+}
