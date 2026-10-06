@@ -1,27 +1,45 @@
-# Native Windows adapters
+# Native adapters (Windows and macOS)
 
-`core/` is a reusable Rust library with no Tauri/WebView2 dependency, using
-`adblock = 0.13.3` with the thread-safe engine configuration. `pake_adblock.rs`
-is the Windows WebView2 adapter, `ui.js` provides the Shield panel and
-Ctrl+Alt+B shortcut, `pake_xinput.rs` is the XInput controller bridge and
-`tv-navigator.js` is the document-start navigator spoof. All are copied into
-`node_modules/pake-cli/src-tauri` by `scripts/prepare.cjs`.
+`core/` is a reusable Rust library with no Tauri/WebView2/WKWebView dependency,
+using `adblock = 0.13.3` with the thread-safe engine configuration.
+`pake_adblock.rs` is the Windows WebView2 adapter and `pake_adblock_macos.rs`
+the macOS WKWebView adapter; `ui.js` provides the Shield panel and the
+Ctrl+Alt+B / Cmd+Option+B shortcut; `pake_xinput.rs` is the Windows XInput
+controller bridge; `tv-gamepad.js` reads the controller through the page's
+Gamepad API (forwarded to the bridge on Windows, turned into key events in the
+page on macOS); `tv-navigator.js` is the document-start navigator spoof. All
+are copied into `node_modules/pake-cli/src-tauri` by `scripts/prepare.cjs`,
+which picks the platform adapter.
 
 The blocker is taken from
-[youtube-desktop-lite 0.1.16](https://github.com/ltanedo/youtube-desktop-lite)
-with two changes for the leanback target: the fail-open path navigates to the
+[youtube-desktop-lite](https://github.com/ltanedo/youtube-desktop-lite)
+(Windows adapter from 0.1.16, macOS adapter unchanged from 0.2.1) with two
+changes for the leanback target: the Windows fail-open path navigates to the
 configured URL (`youtube.com/tv`) instead of the desktop site, and the Shield
 button stays hidden until the mouse moves.
 
 ## Ad blocker
 
-The app starts on about:blank, registers WebResourceRequested interception and
-document-created scripts, then navigates to YouTube TV after script registration.
+The app starts on about:blank, registers the platform's request filtering and
+document-start scripts, then navigates to YouTube TV after registration.
 Filtering is enabled by default. Changing it persists a native setting, replaces
-the document-created script, and reloads the page. Browser profiles are not cleared.
-Cookies and settings live in the `%APPDATA%/YouTubeTV` profile; blocker files
-are in its `pake-adblock` subdirectory. Login is still subject to Google's
-session expiry.
+the document-start script (Windows) or the native rule list (macOS), and
+reloads the page. Browser profiles are not cleared. Cookies and settings live in
+the `%APPDATA%/YouTubeTV` (Windows) or `~/Library/Application Support/YouTubeTV`
+(macOS) profile; blocker files are in its `pake-adblock` subdirectory. Login is
+still subject to Google's session expiry.
+
+### macOS
+
+WKWebView cannot intercept individual requests, so the macOS adapter compiles a
+deliberately narrow `WKContentRuleList` for known ad hosts and endpoints
+(doubleclick, googlesyndication, googleadservices, `youtube.com/pagead`,
+`api/stats/ads`, `ptracking`, `get_midroll_info`) and attaches it before the
+first navigation. It never blocks `googlevideo.com` media or `youtubei` player
+responses. The shared adblock-rust scriptlets, late-response pruning and
+cosmetic rules are injected as an initialization script. WebKit does not
+expose per-rule match counters, so the Shield panel labels them unavailable
+instead of showing zeros.
 
 ### Late-ad response fix
 
@@ -36,20 +54,23 @@ the bundle fingerprint also includes the local rules.
 
 ### Scope and limitations
 
-- Requests originating from HTTPS youtube.com, www/m/music.youtube.com and
-  youtube-nocookie.com/www.youtube-nocookie.com are checked; other origins and
-  document navigations are allowed, including Google sign-in documents.
-- Network type/method, Referer (or top document URL fallback), exceptions and
-  base64 resource redirects are supported. Blocked requests receive 403.
-  Newer WebView2 APIs include worker/frame sources; older runtimes use the legacy
-  filter. Referrer-less nested-frame attribution is approximate.
+- Document-start filtering is restricted to HTTPS youtube.com,
+  www/m/music.youtube.com and youtube-nocookie.com/www.youtube-nocookie.com;
+  other origins and document navigations are allowed, including Google sign-in
+  documents.
+- On Windows, network type/method, Referer (or top document URL fallback),
+  exceptions and base64 resource redirects are supported. Blocked requests
+  receive 403. Newer WebView2 APIs include worker/frame sources; older runtimes
+  use the legacy filter. Referrer-less nested-frame attribution is approximate.
+- On macOS, network blocking is limited to the fixed rule list above; the
+  downloaded filter lists only feed the scriptlets and cosmetic rules.
 - Main-world, document-start scriptlets and domain-specific CSS are applied.
   Only procedural actions convertible to ordinary CSS are supported; there is no
   full uBO procedural DOM engine, response-body rewriting, CSP/header
   manipulation or Brave Shields parity.
 - Server-stitched ads are not guaranteed to be removed. Never infer success just
   from a session where no ad was served.
-- Linux/macOS are not supported by this adapter. No Skip-button clicking loop.
+- Linux is not supported. No Skip-button clicking loop on either platform.
 - Stats contain counts, bundle fingerprint, runtime/version and a hashed rule ID;
   no request URLs, cookies, authorization headers or browsing history are logged.
 
@@ -69,30 +90,44 @@ then atomically replace one combined cache file. They apply after restart so
 network rules and early scripts use the same bundle. Failed downloads/validation
 leave existing filters intact; an invalid cache falls back to the shipped snapshot.
 
-## XInput controller bridge
+## Controller bridge
 
-`pake_xinput.rs` spawns one thread that polls `XInputGetState` for slots 0–3
-every 16 ms. Each mapped button (and each left-stick direction, thresholded at
-50 %) is tracked by a small edge/repeat state machine: one key tap on press,
-80 ms debounce, and for navigation inputs a 350 ms repeat delay followed by
-110 ms repeats. Key taps are synthesized with `SendInput`, but only while
-`GetForegroundWindow()` is the app window; on focus loss or disconnect the
+On Windows, `pake_xinput.rs` spawns one thread that polls `XInputGetState` for
+slots 0–3 every 16 ms and merges in the state the page reports through the
+`page_gamepad` command. Each mapped button (and each left-stick direction,
+thresholded at 50 %) is tracked by a small edge/repeat state machine: one key
+tap on press, 80 ms debounce, and for navigation inputs a 350 ms repeat delay
+followed by 110 ms repeats. Key taps are synthesized with `SendInput`, but only
+while `GetForegroundWindow()` is the app window; on focus loss or disconnect the
 held state is cleared so nothing fires when focus returns.
 
-The state machine has unit tests (`cargo test --lib pake_xinput` inside the
-patched runtime).
+On macOS, `tv-gamepad.js` runs the same mapping and state machine in the page
+and dispatches `keydown`/`keyup` `KeyboardEvent`s (key, code and legacy
+`keyCode`) to the focused element. WKWebView exposes any controller macOS
+recognizes through the Gamepad API, so no native code, OS input injection or
+accessibility permission is involved. Triggers raise the `pake:captions-toggle`
+/ `pake:aspect-toggle` events for `tv-player.js` on both platforms.
+
+The Windows state machine has unit tests (`cargo test --lib pake_xinput`
+inside the patched runtime); the page script is tested by
+`scripts/test-gamepad.cjs` (part of `npm test`), which runs it in a fake page
+with a scripted gamepad on both platform paths.
 
 ## Build and test
 
-From the project root on Windows with Node 22+, Rust 1.95 (tested), Visual Studio
-C++ build tools and WebView2:
+From the project root with Node 22+ and Rust 1.95 or newer, with Visual Studio
+C++ build tools and WebView2 on Windows or Xcode Command Line Tools on macOS:
 
-```powershell
+```sh
 npm ci --ignore-scripts
 npm run build
-$env:CARGO_TARGET_DIR = Join-Path (Get-Location) '.build-target'
 npm test
 ```
+
+On Windows, set `CARGO_TARGET_DIR` to `.build-target` before `npm test`. The
+build produces `YouTubeTV.exe`/`YouTubeTV.msi` on Windows or an Apple-silicon
+`YouTubeTV.dmg` on macOS. Local macOS builds are ad-hoc signed; public
+distribution still requires a Developer ID signature and Apple notarization.
 
 `scripts/prepare.cjs` checks Pake 3.15.7, applies the native background/startup
 patch and explicit anchor-checked edits, copies the checked-in sources, and

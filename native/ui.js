@@ -1,4 +1,4 @@
-// Native WebView2 document-created script; remains usable when filtering is off.
+// Native document-start script (WebView2 / WKWebView); remains usable when filtering is off.
 (() => {
   if (window.__pakeBlockerUi) return;
   window.__pakeBlockerUi = true;
@@ -68,13 +68,14 @@
         current = await invoke('blocker_status');
         statusText.textContent = current.enabled ? 'Blocking is on' : 'Blocking is off';
         toggle.textContent = current.enabled ? 'Turn off & reload' : 'Turn on & reload';
+        const webKit = current.runtime.includes('WKWebView');
         details.textContent = [
-          'Blocked requests: ' + current.blocked,
-          'Resource replacements: ' + current.redirected,
-          'Requests checked: ' + current.checked,
+          webKit ? 'Native match counters: not exposed by WebKit' : 'Blocked requests: ' + current.blocked,
+          webKit ? null : 'Resource replacements: ' + current.redirected,
+          webKit ? null : 'Requests checked: ' + current.checked,
           'Early scripts: ' + (current.script_ready ? 'installed' : 'not installed'),
           'Engine: ' + current.engine,
-          'WebView2: ' + current.runtime,
+          'Runtime: ' + current.runtime,
           'Filters: ' + current.filters,
           'Bundle: ' + current.fingerprint.slice(0, 12),
           'Last rule ID: ' + (current.last_rule || 'none'),
@@ -105,7 +106,7 @@
     };
     // The leanback UI is a controller/remote experience: keep the Shield button
     // out of the way until a mouse moves, and always hide it while the panel is
-    // closed in fullscreen. Ctrl+Alt+B still opens the panel from the keyboard.
+    // closed in fullscreen. Ctrl+Alt+B (Cmd+Option+B on macOS) still opens the panel from the keyboard.
     let mouseIdleTimer;
     let mouseActive = false;
     const visibility = () => {
@@ -120,7 +121,7 @@
     }, { passive: true });
     visibility();
     window.addEventListener('keydown', event => {
-      if (event.ctrlKey && event.altKey && !event.shiftKey && event.code === 'KeyB' && !event.repeat) {
+      if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey && event.code === 'KeyB' && !event.repeat) {
         event.preventDefault(); event.stopImmediatePropagation();
         panel.hidden = !panel.hidden; visibility(); if (!panel.hidden) refresh();
       }
