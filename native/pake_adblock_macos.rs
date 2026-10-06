@@ -18,6 +18,14 @@ use tauri::{Manager, WebviewWindow};
 // The shared adblock-rust engine still supplies uBO scriptlets, response pruning,
 // and cosmetic rules at document start. Keep this native list deliberately
 // narrow: YouTube video media and player API responses must never be blocked.
+//
+// The last two rules mirror what the Windows engine blocks for the leanback
+// (TVHTML5) client, checked against the bundled lists with the page as source:
+// the ad-media bootstrap `googlevideo.com/initplayback?source=youtube&…c=TVHTML5&…oad=`
+// (uBO filters: `||googlevideo.com/initplayback?source=youtube&*c=TVHTML5&*oad=$xhr,domain=youtube.com`)
+// and `youtubei/v1/player/ad_break`. Without them, ads whose metadata survived
+// pruning (typically post-rolls) could still load their media on macOS.
+// Ordinary `videoplayback` and `initplayback` without `oad=` stay allowed.
 const CONTENT_RULES: &str = r#"[
   {"trigger":{"url-filter":"^https?://([^/]+\\.)?doubleclick\\.net/","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
   {"trigger":{"url-filter":"^https?://([^/]+\\.)?googlesyndication\\.com/","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
@@ -25,9 +33,12 @@ const CONTENT_RULES: &str = r#"[
   {"trigger":{"url-filter":"^https?://([^/]+\\.)?youtube\\.com/pagead/","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
   {"trigger":{"url-filter":"^https?://([^/]+\\.)?youtube\\.com/api/stats/ads","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
   {"trigger":{"url-filter":"^https?://([^/]+\\.)?youtube\\.com/ptracking","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
-  {"trigger":{"url-filter":"^https?://([^/]+\\.)?youtube\\.com/get_midroll_info","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}}
+  {"trigger":{"url-filter":"^https?://([^/]+\\.)?youtube\\.com/get_midroll_info","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
+  {"trigger":{"url-filter":"^https?://([^/]+\\.)?youtube\\.com/youtubei/v1/player/ad_break","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}},
+  {"trigger":{"url-filter":"^https?://([^/]+\\.)?googlevideo\\.com/initplayback\\?source=youtube&.*c=TVHTML5&.*oad=","if-domain":["*youtube.com","*youtube-nocookie.com"]},"action":{"type":"block"}}
 ]"#;
-const RULE_LIST_ID: &str = "com.pake.youtube.blocker.network.v1";
+// Bumped whenever CONTENT_RULES change so WebKit never serves a stale compiled list.
+const RULE_LIST_ID: &str = "com.pake.youtube.blocker.network.v2";
 
 #[derive(Clone)]
 pub struct State(pub Arc<Mutex<Service>>);
@@ -425,8 +436,21 @@ mod tests {
     #[test]
     fn native_rules_are_valid_and_do_not_block_media_or_player_api() {
         let rules: serde_json::Value = serde_json::from_str(CONTENT_RULES).unwrap();
-        assert!(rules.as_array().is_some_and(|rules| !rules.is_empty()));
-        assert!(!CONTENT_RULES.contains("googlevideo"));
-        assert!(!CONTENT_RULES.contains("youtubei"));
+        let rules = rules.as_array().expect("rule array");
+        assert!(!rules.is_empty());
+        for rule in rules {
+            let filter = rule["trigger"]["url-filter"].as_str().expect("url-filter");
+            assert_eq!(rule["action"]["type"], "block");
+            assert!(rule["trigger"]["if-domain"].is_array(), "rules are scoped to YouTube pages");
+            // Media is only ever matched together with the ad marker; the player
+            // API is only matched on its ad_break endpoint.
+            if filter.contains("googlevideo") {
+                assert!(filter.contains("initplayback") && filter.contains("oad="), "{filter}");
+            }
+            if filter.contains("youtubei") {
+                assert!(filter.contains("youtubei/v1/player/ad_break"), "{filter}");
+            }
+            assert!(!filter.contains("videoplayback"), "{filter}");
+        }
     }
 }

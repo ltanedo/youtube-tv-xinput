@@ -13,10 +13,11 @@ which picks the platform adapter.
 
 The blocker is taken from
 [youtube-desktop-lite](https://github.com/ltanedo/youtube-desktop-lite)
-(Windows adapter from 0.1.16, macOS adapter unchanged from 0.2.1) with two
-changes for the leanback target: the Windows fail-open path navigates to the
-configured URL (`youtube.com/tv`) instead of the desktop site, and the Shield
-button stays hidden until the mouse moves.
+(Windows adapter from 0.1.16, macOS adapter from 0.2.1) with three changes for
+the leanback target: the Windows fail-open path navigates to the configured
+URL (`youtube.com/tv`) instead of the desktop site, the Shield button stays
+hidden until the mouse moves, and the macOS native rule list adds the TV
+client's ad-media rule (below).
 
 ## Ad blocker
 
@@ -34,12 +35,20 @@ still subject to Google's session expiry.
 WKWebView cannot intercept individual requests, so the macOS adapter compiles a
 deliberately narrow `WKContentRuleList` for known ad hosts and endpoints
 (doubleclick, googlesyndication, googleadservices, `youtube.com/pagead`,
-`api/stats/ads`, `ptracking`, `get_midroll_info`) and attaches it before the
-first navigation. It never blocks `googlevideo.com` media or `youtubei` player
-responses. The shared adblock-rust scriptlets, late-response pruning and
-cosmetic rules are injected as an initialization script. WebKit does not
-expose per-rule match counters, so the Shield panel labels them unavailable
-instead of showing zeros.
+`api/stats/ads`, `ptracking`, `get_midroll_info`, `youtubei/v1/player/ad_break`)
+and attaches it before the first navigation. The shared adblock-rust
+scriptlets, late-response pruning and cosmetic rules are injected as an
+initialization script. WebKit does not expose per-rule match counters, so the
+Shield panel labels them unavailable instead of showing zeros.
+
+The leanback (TVHTML5) client loads ad media through
+`googlevideo.com/initplayback?source=youtube&…c=TVHTML5&…oad=`; on Windows the
+engine blocks it (uBO filters: `||googlevideo.com/initplayback?source=youtube&*c=TVHTML5&*oad=$xhr,domain=youtube.com`),
+so the macOS list carries the same rule. That is the only `googlevideo.com`
+rule: ordinary `videoplayback` and `initplayback` without the `oad=` ad marker,
+and all `youtubei` responses other than `player/ad_break`, are never blocked
+(enforced by the adapter's unit test). Without it, an ad whose metadata was
+not pruned (typically a post-roll) could still play on macOS.
 
 ### Late-ad response fix
 
