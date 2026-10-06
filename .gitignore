@@ -2,6 +2,9 @@
 YouTubeTV.exe
 YouTubeTV.msi
 YouTubeTV.zip
+YouTubeTV.app/
+YouTubeTV.dmg
+YouTubeTV-binary
 /dist
 node_modules/
 .build-target/
