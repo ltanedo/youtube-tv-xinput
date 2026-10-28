@@ -1,0 +1,29 @@
+{
+  "before": {
+    "body": "You're signed out\nThe recommended videos you see are based on signed out watches on this device. Learn more at youtube.com\/tvrecs.",
+    "error": null,
+    "height": 720,
+    "paused": false,
+    "readyState": 4,
+    "time": 2.115576,
+    "title": "YouTube on TV",
+    "tv": true,
+    "video": true,
+    "width": 1280
+  },
+  "after": {
+    "body": "You're signed out\nThe recommended videos you see are based on signed out watches on this device. Learn more at youtube.com\/tvrecs.",
+    "error": null,
+    "height": 720,
+    "paused": false,
+    "readyState": 4,
+    "time": 7.174434,
+    "title": "YouTube on TV",
+    "tv": true,
+    "video": true,
+    "width": 1280
+  },
+  "pauseResume": true,
+  "blockedRequests": 5,
+  "filterErrors": 0
+}

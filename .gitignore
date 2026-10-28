@@ -10,3 +10,11 @@ node_modules/
 .build-target/
 native/core/target/
 *.log
+
+# Android SDK paths, generated assets/native libraries, and emulator evidence
+android/.gradle/
+android/.kotlin/
+android/local.properties
+android/**/build/
+android/blocker/target/
+android/test-results/
