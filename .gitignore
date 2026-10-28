@@ -6,6 +6,7 @@ YouTubeTV.app/
 YouTubeTV.dmg
 YouTubeTV-binary
 /dist
+/build
 node_modules/
 .build-target/
 native/core/target/
