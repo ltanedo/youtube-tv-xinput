@@ -57,6 +57,19 @@ separately without reusing another app's release key.
 
 ## Controls
 
+On a touchscreen, the YouTube page acts as a remote touchpad:
+
+- **Swipe up/down/left/right:** move focus one step in that direction (48dp minimum).
+- **Tap:** select the focused item. Selection waits briefly to distinguish a double tap.
+- **Double-tap:** back, without also selecting the item.
+- **Touch and hold:** open the native settings menu.
+
+Swipes move focus in the direction of your finger, rather than scrolling the
+page. Short drags, canceled gestures, and multi-finger gestures do not navigate.
+Touch does not generate a second browser click. Google sign-in/consent pages
+and native settings dialogs keep normal touchscreen behavior. Remotes,
+keyboards, mouse input, and game controllers continue to work alongside touch.
+
 Use the remote's D-pad and center button to browse. Back goes back inside
 YouTube. **Hold Back for 700 ms**, or press Menu/F1, to open the native settings
 menu: toggle blocking, reload, go home, inspect counters, or exit.

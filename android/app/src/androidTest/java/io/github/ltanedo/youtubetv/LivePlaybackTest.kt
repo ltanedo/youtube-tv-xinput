@@ -59,7 +59,7 @@ class LivePlaybackTest {
         video:!!v,time:v?v.currentTime:0,paused:v?v.paused:true,
         width:v?v.videoWidth:0,height:v?v.videoHeight:0,
         readyState:v?v.readyState:0,error:v&&v.error?v.error.code:null,
-        body:document.body?document.body.innerText.slice(0,1500):''};})()
+        bodyClass:document.body?document.body.className:''};})()
     """.trimIndent()
 
     @Test fun liveLeanbackPlaybackAndRemotePauseResume() {

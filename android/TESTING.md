@@ -1,5 +1,24 @@
 # Android port validation
 
+## Touch navigation update — 2026-10-28 (0.2.0)
+
+All **8 controlled instrumentation tests passed on both** the Android 14 ARM64
+TV emulator (1920×1080) and an Android 15 ARM64 Pixel 5 emulator in landscape.
+See [TV output](evidence/gesture-tv.txt) and [phone output](evidence/gesture-phone.txt).
+Coverage includes four swipe directions, tap/select, double-tap/back, hold/settings,
+no duplicate DOM clicks, cancellation/multitouch, switching from touch to remote,
+ordinary Google consent touch, remote/gamepad buttons, captions/aspect shortcuts,
+stick repeat/disconnect, JNI filtering, fetch/XHR pruning, and blocker toggling.
+The phone's first-use Android immersive-mode hint must be dismissed before testing.
+
+The debug and instrumentation APKs built, Android lint passed, and `npm test`
+passed. A live phone playback/pause-resume run succeeded earlier in this session;
+a repeat timed out before playback started. The current TV live check encountered
+YouTube's account/bot-confirmation screen; saved accounts were left untouched.
+These network-dependent results do not establish reliable playback on every session
+or physical Chromecast compatibility. The historical live evidence below is from
+the previous version, not a new successful TV playback run.
+
 Tested on 2026-10-27 on an Apple-silicon Mac using an Android 14 (API 34)
 Android TV ARM64 emulator, `tv_1080p` profile (1920×1080 display), with the image's
 bundled Google WebView 113.0.5672.136. The emulator used SwiftShader rendering.

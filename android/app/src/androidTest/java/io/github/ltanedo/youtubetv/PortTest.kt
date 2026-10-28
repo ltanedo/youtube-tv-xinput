@@ -47,7 +47,9 @@ class PortTest {
         <!doctype html><html><head><script>
         window.earlyUA=navigator.userAgent;
         window.keys=[];document.addEventListener('keydown',e=>keys.push(e.keyCode));
+        window.clicks=0;document.addEventListener('click',()=>clicks++);
         window.captionEvents=0;window.addEventListener('pake:captions-toggle',()=>captionEvents++);
+        window.aspectEvents=0;window.addEventListener('pake:aspect-toggle',()=>aspectEvents++);
         </script></head><body>Android port fixture<script>
         Promise.all([
           fetch('/youtubei/v1/player?fixture=1').then(r=>r.json()),
@@ -75,7 +77,8 @@ class PortTest {
         val deadline = SystemClock.elapsedRealtime() + 30000
         while (SystemClock.elapsedRealtime() < deadline) {
             var ready = false
-            scenario.onActivity { ready = it.ready }
+            scenario.onActivity { ready = it.ready && it.web.hasWindowFocus() &&
+                it.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
             if (ready) return
             SystemClock.sleep(100)
         }
@@ -132,13 +135,14 @@ class PortTest {
             awaitJs(scenario, "window.results || null")
             scenario.onActivity { activity ->
                 for (key in listOf(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER,
-                    KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_L2)) {
+                    KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_L2,
+                    KeyEvent.KEYCODE_BUTTON_R2, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)) {
                     activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, key))
                     activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, key))
                 }
             }
-            awaitJs(scenario, "keys.length===4 && captionEvents===1")
-            assertEquals("[39,13,27,32]", evaluate(scenario, "keys"))
+            awaitJs(scenario, "keys.length===7 && captionEvents===1 && aspectEvents===1")
+            assertEquals("[39,13,27,32,191,33,34]", evaluate(scenario, "keys"))
         }
     }
 
@@ -164,6 +168,126 @@ class PortTest {
             val count = evaluate(scenario, "keys.length")
             SystemClock.sleep(500)
             assertEquals(count, evaluate(scenario, "keys.length"))
+        }
+    }
+
+    private fun touch(scenario: ActivityScenario<MainActivity>, action: Int, x: Float, y: Float, down: Long) {
+        scenario.onActivity {
+            val event = android.view.MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            it.web.dispatchTouchEvent(event)
+            event.recycle()
+        }
+    }
+
+    @Test fun touchscreenDirectionsTapDoubleTapAndRemoteCoexistWithoutClicks() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            awaitReady(scenario)
+            scenario.onActivity { useFixture(it) }
+            awaitJs(scenario, "window.results || null")
+            // Physical pixels deliberately exceed 48dp even on high-density displays.
+            for ((dx, dy) in listOf(300f to 0f, -300f to 0f, 0f to -300f, 0f to 300f)) {
+                val down = SystemClock.uptimeMillis()
+                touch(scenario, 0, 500f, 400f, down)
+                touch(scenario, 2, 500f + dx, 400f + dy, down)
+                touch(scenario, 1, 500f + dx, 400f + dy, down)
+            }
+            assertEquals("[39,37,38,40]", evaluate(scenario, "keys"))
+            var down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 1, 500f, 400f, down)
+            awaitJs(scenario, "keys.length===5")
+            // A double tap produces Back only, with no extra Select or DOM clicks.
+            SystemClock.sleep(350)
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 1, 500f, 400f, down)
+            SystemClock.sleep(80)
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 1, 500f, 400f, down)
+            SystemClock.sleep(350)
+            scenario.onActivity {
+                for (key in listOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_BACK)) {
+                    it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, key))
+                    it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, key))
+                }
+            }
+            awaitJs(scenario, "keys.length===9")
+            assertEquals("[39,37,38,40,13,27,37,13,27]", evaluate(scenario, "keys"))
+            assertEquals("0", evaluate(scenario, "clicks"))
+            // Switching to a remote cancels an unconfirmed touch selection.
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 1, 500f, 400f, down)
+            scenario.onActivity {
+                it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP))
+                it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_UP))
+            }
+            SystemClock.sleep(350)
+            assertEquals("[39,37,38,40,13,27,37,13,27,38]", evaluate(scenario, "keys"))
+        }
+    }
+
+    @Test fun cancelledTouchDoesNotNavigateAndHoldOpensSettings() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            awaitReady(scenario)
+            scenario.onActivity { useFixture(it) }
+            awaitJs(scenario, "window.results || null")
+            var down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 3, 800f, 400f, down)
+            touch(scenario, 1, 800f, 400f, down)
+            SystemClock.sleep(350)
+            assertEquals("[]", evaluate(scenario, "keys"))
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            scenario.onActivity {
+                val pointers = Array(2) { index -> android.view.MotionEvent.PointerProperties().apply { id = index } }
+                val coords = Array(2) { index -> android.view.MotionEvent.PointerCoords().apply { x = 500f + index * 100; y = 400f } }
+                val event = android.view.MotionEvent.obtain(down, SystemClock.uptimeMillis(),
+                    android.view.MotionEvent.ACTION_POINTER_DOWN or (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                    2, pointers, coords, 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+                it.web.dispatchTouchEvent(event)
+                event.recycle()
+            }
+            touch(scenario, 1, 800f, 400f, down)
+            SystemClock.sleep(350)
+            assertEquals("[]", evaluate(scenario, "keys"))
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            SystemClock.sleep(800)
+            val ui = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+            val deadline = SystemClock.uptimeMillis() + 5000
+            var menuFound = false
+            while (!menuFound && SystemClock.uptimeMillis() < deadline) {
+                menuFound = ui.rootInActiveWindow?.findAccessibilityNodeInfosByText("Ad blocking:")?.isNotEmpty() == true
+                if (!menuFound) SystemClock.sleep(100)
+            }
+            assertTrue("Long press opens native settings", menuFound)
+            touch(scenario, 1, 500f, 400f, down)
+            assertEquals("[]", evaluate(scenario, "keys"))
+            // Native dialog handles Back; it must not leak Escape into the page.
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            SystemClock.sleep(350)
+            assertEquals("[]", evaluate(scenario, "keys"))
+        }
+    }
+
+    @Test fun googleConsentPagesKeepOrdinaryTouch() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            awaitReady(scenario)
+            scenario.onActivity {
+                useFixture(it)
+                it.web.loadUrl("https://consent.google.com/tv")
+            }
+            awaitJs(scenario, "location.hostname==='consent.google.com' && window.results || null")
+            val down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 100f, 100f, down)
+            touch(scenario, 1, 100f, 100f, down)
+            awaitJs(scenario, "clicks===1")
+            assertEquals("[]", evaluate(scenario, "keys"))
+            assertEquals("true", evaluate(scenario, "typeof window.__pakeBlockerCss==='undefined'"))
         }
     }
 }

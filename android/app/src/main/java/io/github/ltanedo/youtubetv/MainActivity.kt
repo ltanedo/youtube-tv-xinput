@@ -44,6 +44,8 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
     private var settingsDialog: AlertDialog? = null
     private var backHeld = false
     private var axisKey: Int? = null
+    private lateinit var touchNavigation: TouchNavigation
+    private var touchCaptured = false
     private val repeatAxis = object : Runnable {
         override fun run() {
             axisKey?.let { sendKey(it); handler.postDelayed(this, 110) }
@@ -80,6 +82,18 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
             settings.setSupportMultipleWindows(false)
             webChromeClient = WebChromeClient()
         }
+        touchNavigation = TouchNavigation(this, ::sendKey, ::showSettings)
+        web.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                touchCaptured = ready && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) &&
+                    FilteringClient.isYouTube(android.net.Uri.parse(web.url ?: ""))
+            }
+            if (touchCaptured) {
+                touchNavigation.touch(event)
+                if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) touchCaptured = false
+                true
+            } else false // Preserve native touch on Google sign-in/consent pages and mouse input.
+        }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
@@ -103,7 +117,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
                     web.requestFocus()
                     ready = true
                     web.loadUrl(START_URL)
-                    Toast.makeText(this, "Hold Back or press Menu for YouTubeTV settings", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Swipe to navigate • Tap to select • Double-tap to go back • Hold for settings", Toast.LENGTH_LONG).show()
                 }
             } catch (_: Exception) {
                 runOnUiThread { loading.text = "Could not initialize the ad blocker.\nClose and reopen YouTubeTV to retry." }
@@ -166,7 +180,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
                     3 -> AlertDialog.Builder(this).setTitle("Diagnostics").setMessage(
                         "Blocked requests: ${filtering.blocked.get()}\nFilter errors: ${filtering.failures.get()}\n\n" +
                         "$version\nFingerprint: ${fingerprint.take(16)}\nWebView: $runtime\n\n" +
-                        "Bundled filters; updates ship with the app. Hold Back or press Menu/F1 to open settings."
+                        "Bundled filters; updates ship with the app.\nTouch: swipe to navigate, tap to select, double-tap back, hold for settings.\nRemote: hold Back or press Menu/F1 for settings."
                     ).setPositiveButton("OK", null).show()
                     4 -> finish()
                 }
@@ -175,6 +189,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (!ready || settingsDialog?.isShowing == true) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) touchNavigation.cancel()
         if (event.keyCode == KeyEvent.KEYCODE_MENU || event.keyCode == KeyEvent.KEYCODE_F1) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) showSettings()
             return true
@@ -243,6 +258,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (ready && settingsDialog?.isShowing != true && event.isFromSource(InputDevice.SOURCE_JOYSTICK)) {
+            touchNavigation.cancel()
             val x = event.getAxisValue(MotionEvent.AXIS_X) + event.getAxisValue(MotionEvent.AXIS_HAT_X)
             val y = event.getAxisValue(MotionEvent.AXIS_Y) + event.getAxisValue(MotionEvent.AXIS_HAT_Y)
             val key = when {
@@ -269,11 +285,12 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) { stopAxis(); handler.removeCallbacks(longBack) }
+        if (!hasFocus) { stopAxis(); handler.removeCallbacks(longBack); if (::touchNavigation.isInitialized) touchNavigation.cancel() }
     }
 
     override fun onPause() {
         stopAxis()
+        touchNavigation.cancel()
         handler.removeCallbacks(longBack)
         web.onPause()
         CookieManager.getInstance().flush()
@@ -282,6 +299,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
     override fun onResume() { super.onResume(); if (::web.isInitialized) web.onResume() }
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        touchNavigation.cancel()
         loader.shutdown()
         getSystemService(InputManager::class.java).unregisterInputDeviceListener(this)
         settingsDialog?.dismiss()
