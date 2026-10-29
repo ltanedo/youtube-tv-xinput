@@ -1,0 +1,9 @@
+
+io.github.ltanedo.youtubetv.PortTest:.........
+io.github.ltanedo.youtubetv.PlaybackSettingsTest:...
+
+Time: 35.178
+
+OK (12 tests)
+
+

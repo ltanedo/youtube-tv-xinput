@@ -72,6 +72,11 @@ The mapping lives in [`native/pake_xinput.rs`](native/pake_xinput.rs)
 
 ## Install (macOS)
 
+An experimental **Android TV / Chromecast with Google TV port** is available
+under [`android/`](android/README.md), with its own APK build and emulator tests.
+It reuses the Rust blocker and shared page scripts in a native Android WebView
+shell. See that guide for setup, controls, and platform limitations.
+
 Download `YouTubeTV-<version>-macOS-Apple-Silicon.dmg` from the releases page,
 open it and drag **YouTubeTV** to Applications. The build is ad-hoc signed, not
 notarized: if Gatekeeper blocks the first launch, right-click the app and
