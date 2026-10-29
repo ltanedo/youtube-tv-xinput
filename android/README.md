@@ -72,15 +72,37 @@ keyboards, mouse input, and game controllers continue to work alongside touch.
 
 Use the remote's D-pad and center button to browse. Back goes back inside
 YouTube. **Hold Back for 700 ms**, or press Menu/F1, to open the native settings
-menu: toggle blocking, reload, go home, inspect counters, or exit.
+menu: toggle blocking, zoom, background play, or touch lock; reload, go home, inspect counters, or exit.
 
 Game controllers map A/Start/L3 to select, B/View/R3 to back, X to play/pause,
 Y to search, LB/RB to PageUp/PageDown, and digital LT/RT to captions/fill.
 The left stick and hat axes navigate with 350 ms initial delay and 110 ms repeat.
 Controllers that report triggers only as analog axes do not yet provide the
-caption/fill shortcuts. Keyboard player shortcuts are retained from the shared
-player script. Android handles controller input natively; the desktop gamepad
+caption/fill shortcuts. Keyboard captions/frame-step shortcuts are retained from the shared
+player script; Android zoom is controlled by the native menu or right trigger. Android handles controller input natively; the desktop gamepad
 poller is not injected, avoiding duplicate key delivery.
+
+## Zoom, background play, and touch lock
+
+Hold the screen (or hold Back / press Menu) to open settings.
+
+- **Zoom:** choose **fill screen (crop)** to cover the unfolded display, including
+  near-square screens such as the Z Fold inner display. Fill preserves proportions
+  and crops the edges; **fit entire video** keeps the whole picture with black bars.
+  The setting applies immediately without reloading and persists across launches.
+  The gamepad right trigger toggles the same setting.
+- **Background play:** enabled by default. Start a video, then press Home or turn
+  off the screen to continue audio. An Android media foreground service displays a
+  playback notification with **Pause** and a shortcut back to the app. Pausing,
+  exiting, or removing the app from Recents stops the service. Turning this setting
+  off restores pause-on-leave behavior. The preference persists across launches.
+  This keeps the existing WebView session alive; it does not restore playback after
+  process death, force-stop, or device restart. Samsung battery restrictions and
+  long screen-off sessions still need physical-device validation.
+- **Lock touch controls:** blocks taps, double taps, and swipes while watching.
+  **Hold the screen again, then choose Unlock touch controls** to unlock. Native
+  settings, consent/sign-in touch, and remote/gamepad controls remain available.
+  Touch lock resets when the activity is recreated to avoid leaving the app locked.
 
 ## Shared implementation and boundaries
 
@@ -107,9 +129,11 @@ poller is not injected, avoiding duplicate key delivery.
   WebView debugging; release builds do not enable it.
 - A WebView with `DOCUMENT_START_SCRIPT` support is required. The app displays an
   update instruction when unavailable instead of silently injecting too late.
-- Android lifecycle pause/resume replaces the desktop background-play spoof.
-  Background playback, voice search, casting, picture-in-picture, and native
-  Android TV recommendations are not implemented.
+- Android background play uses a `mediaPlayback` foreground service, a media-session
+  notification, and YouTube-scoped visibility handling. The WebView retains audio
+  focus management. See Android's [media service requirements](https://developer.android.com/develop/background-work/services/fgs/service-types#media).
+  Voice search, casting, picture-in-picture, and native Android TV recommendations
+  are not implemented.
 
 WebView codec support, YouTube's console-client support, sign-in restrictions,
 and available video resolutions depend on the device and service. Emulator
@@ -132,7 +156,9 @@ npm test
 WebView. It checks document-start spoofing, fetch and XHR ad-field pruning,
 preservation of video metadata/media, native network blocking, blocking toggle,
 navigation boundaries, and remote/controller key delivery. These fixtures do not
-depend on real ads being served. Live playback must be checked separately.
+depend on real ads being served. `PlaybackSettingsTest` uses generated video/audio
+in the test APK to verify zoom, Home/screen-off playback, notification pause,
+disabling background play, and service cleanup. Live playback is checked separately.
 
 The opt-in `LivePlaybackTest` opens a public Big Buck Bunny video, checks that the
 video clock advances, and tests remote pause/resume. It saves screenshots and a

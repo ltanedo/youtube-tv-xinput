@@ -1,5 +1,28 @@
 # Android port validation
 
+## Zoom, background playback, and touch lock — 2026-10-29 (0.3.0 / code 3)
+
+All **12 controlled tests passed** on Android 14 ARM64 TV (1920×1080) and Android
+15 ARM64 phone resized to **2176×1812 landscape** to exercise a Fold-shaped inner
+display. [TV output](evidence/v030-tv.txt) · [Fold-shaped emulator output](evidence/v030-fold.txt).
+Tests cover zoom fit/fill and viewport bounds, preference reapplication after reload,
+Android fit overriding desktop CSS, menu toggles, touch lock with hold-to-unlock,
+remote input while locked, and every previous gesture/filter/controller regression.
+A generated H.264/AAC fixture verified advancing video behind Home and for four
+seconds with the screen off, notification Pause, pause-on-leave when disabled, and
+foreground-service cleanup on exit.
+
+**Live YouTube playback also passed** on the Fold-shaped emulator at 1920×1080:
+clock advanced from 2.16 to 7.38 seconds, remote pause/resume worked, then playback
+continued behind Home and with the screen off (five seconds each).
+[Live test](evidence/v030-live.txt) · [Telemetry](evidence/v030-live-report.json).
+This session counted four blocked requests and zero interception errors.
+
+Universal debug/test APK builds, Android lint (0 errors, 22 warnings), and `npm test`
+passed. No physical Samsung Fold or Chromecast was connected. Long screen-off
+sessions, Samsung battery policies, folding between displays on real hardware, and
+playback recovery after process death are not established by these short tests.
+
 ## Touch navigation update — 2026-10-28 (0.2.0)
 
 All **8 controlled instrumentation tests passed on both** the Android 14 ARM64

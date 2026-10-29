@@ -274,6 +274,45 @@ class PortTest {
         }
     }
 
+    @Test fun touchLockBlocksGesturesButKeepsRemoteAndHoldToUnlock() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            awaitReady(scenario)
+            scenario.onActivity { useFixture(it); it.setTouchLocked(true) }
+            awaitJs(scenario, "window.results || null")
+            var down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 2, 800f, 400f, down)
+            touch(scenario, 1, 800f, 400f, down)
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 1, 500f, 400f, down)
+            SystemClock.sleep(350)
+            assertEquals("[]", evaluate(scenario, "keys"))
+            scenario.onActivity { it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT)) }
+            awaitJs(scenario, "keys.length===1")
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            SystemClock.sleep(900)
+            val ui = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+            val deadline = SystemClock.uptimeMillis() + 5000
+            var unlocked = false
+            while (!unlocked && SystemClock.uptimeMillis() < deadline) {
+                val node = ui.rootInActiveWindow?.findAccessibilityNodeInfosByText("Unlock touch controls")?.firstOrNull()
+                unlocked = node?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) == true
+                if (!unlocked) SystemClock.sleep(100)
+            }
+            assertTrue("Hold allows unlocking", unlocked)
+            touch(scenario, 1, 500f, 400f, down)
+            SystemClock.sleep(350)
+            scenario.onActivity { assertFalse(it.touchLocked) }
+            down = SystemClock.uptimeMillis()
+            touch(scenario, 0, 500f, 400f, down)
+            touch(scenario, 1, 500f, 400f, down)
+            awaitJs(scenario, "keys.length===2")
+            assertEquals("[39,13]", evaluate(scenario, "keys"))
+        }
+    }
+
     @Test fun googleConsentPagesKeepOrdinaryTouch() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             awaitReady(scenario)

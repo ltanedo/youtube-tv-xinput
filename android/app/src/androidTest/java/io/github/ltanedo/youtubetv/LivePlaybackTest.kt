@@ -94,10 +94,23 @@ class LivePlaybackTest {
                     it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
                 }
                 waitUntil(10) { eval("document.querySelector('video').paused") == "false" }
-                val report = JSONObject().put("before", before).put("after", after).put("pauseResume", true)
+                onMain { it.setBackgroundPlay(true) }
+                waitUntil(10) { PlaybackService.active }
+                val backgroundBefore = JSONObject(eval(telemetry)).getDouble("time")
+                instrumentation.uiAutomation.executeShellCommand("input keyevent 3").close()
+                SystemClock.sleep(5000)
+                val backgroundAfter = JSONObject(eval(telemetry)).getDouble("time")
+                assertTrue("Live video advances behind Home", backgroundAfter > backgroundBefore + 2)
+                instrumentation.uiAutomation.executeShellCommand("input keyevent 223").close()
+                SystemClock.sleep(5000)
+                val screenOffAfter = JSONObject(eval(telemetry)).getDouble("time")
+                assertTrue("Live video advances with screen off", screenOffAfter > backgroundAfter + 2)
+                val report = JSONObject().put("backgroundPlay", true).put("screenOffPlay", true).put("before", before).put("after", after).put("pauseResume", true)
                 onMain { report.put("blockedRequests", it.filtering.blocked.get()).put("filterErrors", it.filtering.failures.get()) }
                 File(instrumentation.targetContext.getExternalFilesDir(null), "live-report.json").writeText(report.toString(2))
             } finally {
+                instrumentation.uiAutomation.executeShellCommand("input keyevent 224").close()
+                instrumentation.uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
                 try {
                     screenshot("live-final.png")
                     File(instrumentation.targetContext.getExternalFilesDir(null), "live-final.json").writeText(eval(telemetry))
