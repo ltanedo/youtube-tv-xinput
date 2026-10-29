@@ -16,6 +16,16 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += (findProperty("androidAbis") as String? ?: "arm64-v8a,armeabi-v7a,x86_64").split(",") }
     }
+    // Cloud sideload builds use a persistent private key, rather than a new debug
+    // identity on every runner. Local builds keep the usual debug key by default.
+    signingConfigs.getByName("debug") {
+        System.getenv("YTTV_KEYSTORE_PATH")?.let { path ->
+            storeFile = file(path)
+            storePassword = requireNotNull(System.getenv("YTTV_KEYSTORE_PASSWORD"))
+            keyAlias = "yttv"
+            keyPassword = storePassword
+        }
+    }
     buildFeatures { buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

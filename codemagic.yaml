@@ -5,10 +5,26 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 45
     environment:
+      groups:
+        - yttv_signing
       java: 17
       node: 22
       ndk: 28.0.13004108
     scripts:
+      - name: Restore persistent sideload signing key
+        script: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import base64, os
+          from pathlib import Path
+          key = Path(os.environ["CM_BUILD_DIR"]) / "build" / "private-signing" / "sideload.p12"
+          key.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+          key.write_bytes(base64.b64decode(os.environ["YTTV_KEYSTORE_BASE64"], validate=True))
+          key.chmod(0o600)
+          assert os.environ["YTTV_KEYSTORE_PASSWORD"], "Signing password is required"
+          with open(os.environ["CM_ENV"], "a") as env:
+              env.write(f"YTTV_KEYSTORE_PATH={key}\n")
+          PYTHON
       - name: Install Android SDK packages
         script: |
           set -euo pipefail
