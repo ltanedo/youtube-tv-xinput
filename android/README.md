@@ -56,7 +56,7 @@ variable group (`YTTV_KEYSTORE_BASE64`, `YTTV_KEYSTORE_PASSWORD`). The workflow 
 if these secrets are missing rather than silently creating another identity.
 Private key material is never committed or included in published artifacts.
 
-**Updating an existing installation:** 0.3.1 uses Android version code **4** and
+**Updating an existing installation:** 0.3.2 uses Android version code **5** and
 retains the 0.3.0 persistent signing key and package ID. Install it over 0.3.0
 without uninstalling; app data and sign-in are retained. Versions older than 0.3.0
 used temporary cloud signing keys and cannot be upgraded with this key.
@@ -99,7 +99,9 @@ Hold the screen (or hold Back / press Menu) to open settings.
   and crops the edges; **fit entire video** keeps the whole picture with black bars.
   The setting applies immediately without reloading and persists across launches.
   The gamepad right trigger toggles the same setting.
-- **Background play:** enabled by default. Start a video, then press Home or turn
+- **Background play:** off by default when no preference has been saved. Enable
+  it in settings to continue audio outside the app. An explicitly saved choice is
+  retained on updates. Start a video, then press Home or turn
   off the screen to continue audio. An Android media foreground service displays a
   playback notification with **Pause** and a shortcut back to the app. Pausing,
   exiting, or removing the app from Recents stops the service. Turning this setting

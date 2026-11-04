@@ -3,6 +3,7 @@ package io.github.ltanedo.youtubetv
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.hardware.input.InputManager
 import android.os.Bundle
@@ -37,7 +38,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
         private set
     var fillScreen = false
         private set
-    var backgroundPlay = true
+    var backgroundPlay = false
         private set
     var touchLocked = false
         private set
@@ -88,7 +89,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         blockingEnabled = getPreferences(MODE_PRIVATE).getBoolean("blocking", true)
         fillScreen = getPreferences(MODE_PRIVATE).getBoolean("fillScreen", false)
-        backgroundPlay = getPreferences(MODE_PRIVATE).getBoolean("backgroundPlay", true)
+        backgroundPlay = getPreferences(MODE_PRIVATE).getBoolean("backgroundPlay", false)
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
         val loading = TextView(this).apply {
@@ -113,7 +114,14 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
             settings.allowContentAccess = false
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.setSupportMultipleWindows(false)
-            webChromeClient = WebChromeClient()
+            webChromeClient = object : WebChromeClient() {
+                // WebView's stock poster is a bright play badge stretched across
+                // the video before its first frame. Keep that transition black.
+                private val poster by lazy {
+                    Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
+                }
+                override fun getDefaultVideoPoster(): Bitmap = poster
+            }
         }
         touchNavigation = TouchNavigation(this, { if (!touchLocked) sendKey(it) }, ::showSettings)
         web.setOnTouchListener { _, event ->

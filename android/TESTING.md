@@ -1,5 +1,27 @@
 # Android port validation
 
+## Video transition and background default — 2026-11-04 (0.3.2 / code 5)
+
+Replaced WebView's stock video poster with a cached opaque black bitmap via
+`WebChromeClient.getDefaultVideoPoster()`. A full-screen, source-less video in the
+actual Android WebView rendered black instead of the stretched bright play badge.
+The native poster is replaced naturally by the first decoded frame; no timed
+cover, playback delay, or forced reload is introduced. Explicit HTML video posters
+are unaffected.
+
+Background play now defaults to **off** if its preference is absent. Explicitly
+saved choices remain authoritative. The package ID and persistent signing key
+remain unchanged for updates from 0.3.0 and 0.3.1.
+
+Validation: all **13 existing instrumentation tests passed on both emulators**
+([TV](evidence/v032-tv.txt), [phone](evidence/v032-phone.txt));
+[live YouTube playback](evidence/v032-live.txt), including remote pause/resume and
+background/screen-off playback after enabling it, also passed. APK assembly and
+Android lint passed. The isolated update emulator accepted 0.3.2 over 0.3.1 with
+`adb install -r`; its app-private marker survived. With no stored background-play
+preference, the native settings menu displayed **Background play: off**.
+The signing certificate remains `d5d6188f79287c15b1609d9bb4efd76ba823d8ce97a9ef9485a311effc2319a0`.
+
 ## Launcher icon and playback recovery — 2026-11-04 (0.3.1 / code 4)
 
 The launcher now uses an adaptive icon with an opaque red background and a white
