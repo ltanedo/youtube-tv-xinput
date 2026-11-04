@@ -5,7 +5,7 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application android:theme="@style/AppTheme" android:label="YouTubeTV"
-        android:icon="@drawable/app_icon" android:banner="@drawable/tv_banner"
+        android:icon="@drawable/app_icon" android:roundIcon="@drawable/app_icon" android:banner="@drawable/tv_banner"
         android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <activity android:name=".MainActivity" android:exported="true"

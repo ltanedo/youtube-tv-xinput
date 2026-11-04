@@ -56,12 +56,11 @@ variable group (`YTTV_KEYSTORE_BASE64`, `YTTV_KEYSTORE_PASSWORD`). The workflow 
 if these secrets are missing rather than silently creating another identity.
 Private key material is never committed or included in published artifacts.
 
-**Updating an existing installation:** 0.3.0 uses Android version code **3**. Older
-cloud builds used temporary signing keys; Android cannot update those installations
-with this key. A one-time uninstall/reinstall is required when coming from an older
-cloud APK, which removes that installation's app data/sign-in. Subsequent cloud
-builds using this persistent key and increasing version codes can update in place.
-Local builds still use the local debug key unless `YTTV_KEYSTORE_PATH` and
+**Updating an existing installation:** 0.3.1 uses Android version code **4** and
+retains the 0.3.0 persistent signing key and package ID. Install it over 0.3.0
+without uninstalling; app data and sign-in are retained. Versions older than 0.3.0
+used temporary cloud signing keys and cannot be upgraded with this key.
+Local builds use the local debug key unless `YTTV_KEYSTORE_PATH` and
 `YTTV_KEYSTORE_PASSWORD` are explicitly provided. Back up the sideload key securely.
 
 ## Controls
@@ -112,6 +111,18 @@ Hold the screen (or hold Back / press Menu) to open settings.
   **Hold the screen again, then choose Unlock touch controls** to unlock. Native
   settings, consent/sign-in touch, and remote/gamepad controls remain available.
   Touch lock resets when the activity is recreated to avoid leaving the app locked.
+
+## Playback recovery
+
+The app keeps its background media service running through temporary buffering.
+For foreground videos, a lightweight two-second sampler detects a stalled media
+clock or sustained heavy frame drops while enough video is already buffered.
+After a ten-second startup grace period and three consecutive unhealthy samples,
+it makes a tiny buffered seek to restart decoding without reloading the page.
+Recovery is limited to two attempts per video, at least 30 seconds apart.
+Paused/ended videos, active seeking, ads, hidden playback, empty buffers, and
+unseekable media are left alone. This is bounded recovery, not a guarantee against
+network shortages or hardware that cannot decode the chosen format/resolution.
 
 ## Shared implementation and boundaries
 

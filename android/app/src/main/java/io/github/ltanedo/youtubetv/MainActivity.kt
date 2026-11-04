@@ -46,7 +46,7 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
     private val playbackPoll = object : Runnable {
         override fun run() {
             if (ready && backgroundPlay && FilteringClient.isYouTube(android.net.Uri.parse(web.url ?: ""))) {
-                web.evaluateJavascript("Array.from(document.querySelectorAll('video,audio')).some(v=>!v.paused&&!v.ended&&v.readyState>=2)") { value ->
+                web.evaluateJavascript("Array.from(document.querySelectorAll('video,audio')).some(v=>!v.paused&&!v.ended)") { value ->
                     if (!isDestroyed && backgroundPlay) {
                         if (value == "true" && foreground && !serviceRequested) {
                             PlaybackService.owner = java.lang.ref.WeakReference(this@MainActivity)
@@ -176,6 +176,8 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
             append(asset("tv-player.js"))
             append("\n")
             append(asset("android-player.js"))
+            append("\nwindow.__yttvForeground=$foreground;\n")
+            append(asset("playback-recovery.js"))
             append("\nwindow.__yttvPreferences($fillScreen,$backgroundPlay);\n")
             append("""
                 (()=>{
@@ -377,10 +379,18 @@ class MainActivity : Activity(), InputManager.InputDeviceListener {
         handler.removeCallbacks(longBack)
         if (!backgroundPlay || isFinishing) { pausePlayback(); web.onPause() }
         foreground = false
+        if (ready) web.evaluateJavascript("window.__yttvForeground=false", null)
         CookieManager.getInstance().flush()
         super.onPause()
     }
-    override fun onResume() { super.onResume(); foreground = true; if (::web.isInitialized) web.onResume() }
+    override fun onResume() {
+        super.onResume()
+        foreground = true
+        if (::web.isInitialized) {
+            web.onResume()
+            if (ready) web.evaluateJavascript("window.__yttvForeground=true", null)
+        }
+    }
     override fun onDestroy() {
         stopPlaybackService()
         PlaybackService.owner = null

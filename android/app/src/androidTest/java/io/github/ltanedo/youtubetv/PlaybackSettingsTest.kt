@@ -132,6 +132,48 @@ class PlaybackSettingsTest {
         }
     }
 
+    @Test fun bufferingKeepsPlaybackServiceAndBufferedStallRecovers() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            setup(scenario)
+            // A fully loaded Blob is seekable in WebView; streaming interception
+            // responses without an HTTP range server report a zero seekable end.
+            eval("fetch('/fixture.mp4').then(r=>r.blob()).then(b=>{document.querySelector('video').src=URL.createObjectURL(b)});true")
+            await { eval("(()=>{const v=document.querySelector('video');return v.currentSrc.startsWith('blob:')&&v.readyState>=2&&v.seekable.length>0&&v.seekable.end(0)>2})()") == "true" }
+            play()
+            eval("Object.defineProperty(document.querySelector('video'),'readyState',{configurable:true,get:()=>1});true")
+            SystemClock.sleep(1500)
+            assertTrue("Buffering must not tear down the playback service", PlaybackService.active)
+            eval("delete document.querySelector('video').readyState;true")
+            // Inject a stuck reported media clock into an otherwise buffered decoder.
+            // A real device's rare decoder fault cannot be forced deterministically.
+            eval("""
+                (()=>{const v=document.querySelector('video'), t=v.currentTime;
+                Object.defineProperty(v,'currentTime',{configurable:true,get:()=>t,set:value=>{
+                  delete v.currentTime; v.currentTime=value; window.recoveredAt=value;
+                }});return true})()
+            """.trimIndent())
+            val end = SystemClock.elapsedRealtime() + 25000
+            val history = mutableListOf<String>()
+            while (SystemClock.elapsedRealtime() < end && eval("!!window.recoveredAt") != "true") {
+                history.add(eval("""(()=>{const v=document.querySelector('video');return {
+                  paused:v.paused,time:Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'currentTime').get.call(v),
+                  error:v.error&&v.error.code,attempts:window.__yttvRecovery.attempts}})()"""))
+                SystemClock.sleep(1000)
+            }
+            assertEquals(history.toString() + eval("""(()=>{const v=document.querySelector('video');return JSON.stringify({
+                state:window.__yttvRecovery,foreground:window.__yttvForeground,time:v.currentTime,
+                paused:v.paused,seeking:v.seeking,src:v.currentSrc,
+                buffered:Array.from({length:v.buffered.length},(_,i)=>[v.buffered.start(i),v.buffered.end(i)]),
+                seekable:Array.from({length:v.seekable.length},(_,i)=>[v.seekable.start(i),v.seekable.end(i)])})})()"""),
+                "true", eval("!!window.recoveredAt"))
+            assertEquals("\"buffered-stall\"", eval("window.__yttvRecovery.reason"))
+            assertEquals("false", eval("document.querySelector('video').paused"))
+            val recovered = time()
+            SystemClock.sleep(1500)
+            assertTrue("Media advances after recovery", time() > recovered + .5)
+        }
+    }
+
     @Test fun disabledBackgroundPausesOnHomeAndExitCleansUpService() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             try {

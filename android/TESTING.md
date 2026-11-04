@@ -1,5 +1,36 @@
 # Android port validation
 
+## Launcher icon and playback recovery — 2026-11-04 (0.3.1 / code 4)
+
+The launcher now uses an adaptive icon with an opaque red background and a white
+play symbol. Visually verified the full circular tile after updating an Android 15
+installation: [launcher screenshot](evidence/v031-launcher.png).
+
+Verified **in-place update from the original Codemagic 0.3.0 APK to 0.3.1** on an
+isolated Android 15 ARM64 emulator. Both have signing certificate SHA-256
+`d5d6188f79287c15b1609d9bb4efd76ba823d8ce97a9ef9485a311effc2319a0`.
+An app-private data marker survived `adb install -r`, with versionCode increasing
+from 3 to 4. [Upgrade record](evidence/v031-upgrade.txt).
+
+The background media service now survives temporary buffering. A bounded foreground
+watchdog makes a tiny seek within buffered/seekable media after sustained clock stalls
+or heavy frame loss. Deterministic JS tests cover both triggers, startup grace,
+cooldown/budget, new-video reset, healthy playback, pauses, seeking, ads, background,
+network buffering, and unseekable media. A WebView test injects a frozen media clock
+on a seekable Blob and verifies automatic recovery followed by advancing playback;
+it also verifies buffering does not stop the media service.
+
+All **13 controlled instrumentation tests passed on both Android TV and the
+Fold-shaped Android 15 emulator**, in separate input/filter and playback runs:
+[TV input/filter](evidence/v031-tv-port.txt), [TV playback](evidence/v031-tv-playback.txt),
+[phone input/filter](evidence/v031-phone-port.txt), [phone playback](evidence/v031-phone-playback.txt).
+[Live YouTube playback](evidence/v031-live.txt) also passed on the phone, including
+remote pause/resume, background and screen-off playback. Local APK assembly,
+Android lint (0 errors), and `npm test` including recovery cases passed.
+
+The exact rare physical-device stutter has not been reproduced. These tests establish
+recovery behavior, not universal prevention of hardware or network-related stutter.
+
 ## Zoom, background playback, and touch lock — 2026-10-29 (0.3.0 / code 3)
 
 All **12 controlled tests passed** on Android 14 ARM64 TV (1920×1080) and Android

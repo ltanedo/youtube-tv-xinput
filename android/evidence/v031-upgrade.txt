@@ -1,0 +1,8 @@
+2026-11-04 — isolated Android 15 ARM64 emulator
+Installed original Codemagic 0.3.0 APK from build 6ae37239ac2ee0da56f2efa5.
+Wrote an app-private data marker using run-as.
+adb install -r YouTubeTV-0.3.1.apk: Success
+Marker retained after update. Installed versionCode=4 / versionName=0.3.1.
+Both APK signing certificates (SHA-256):
+d5d6188f79287c15b1609d9bb4efd76ba823d8ce97a9ef9485a311effc2319a0
+No uninstall, package-ID change, or key rotation.
