@@ -36,11 +36,10 @@ bundling a browser.
   are scaled to cover the whole screen instead of showing black bars left and
   right; the top and bottom are cropped. It applies only to landscape video that
   would otherwise be pillarboxed (Shorts, 4:3 and native 21:9 are left alone).
-  Press **D** while a video plays, or **RT** on the controller, to switch
+  Press **D** while a video plays to switch
   between Fill and Fit; the choice is kept across restarts. The browse UI stays
   16:9 — YouTube lays it out on a fixed 1280×720 grid.
-- **Subtitles shortcut** — press **C** while a video plays, or **LT** on the
-  controller, to turn subtitles on or off. It switches the same setting as the
+- **Subtitles shortcut** — press **C** while a video plays to turn subtitles on or off. It switches the same setting as the
   on-screen CC button and turns back on the last language you used. The choice
   is applied to every video and kept across restarts; using the CC button
   updates it too.
@@ -62,9 +61,14 @@ bundling a browser.
 | B / Back (View) / R3     | Escape        | Back                     |
 | X                        | Space         | Play / pause             |
 | Y                        | `/`           | Search                   |
-| LB / RB                  | PageUp / Down | Seek / scroll            |
-| LT                       | —             | Subtitles on / off       |
-| RT                       | —             | Toggle ultrawide Fill / Fit |
+| LB / RB                  | `,` / `.`     | Frame backward / forward; stays paused |
+| LT / RT                  | F7 / F8       | Seek back / forward 10 seconds and play |
+
+Bumpers use the existing frame-step behavior: the first press during playback
+pauses, and subsequent presses move one frame. Each trigger press seeks and
+resumes playback, even when paused. Holding a bumper or trigger does not repeat.
+Captions and fill/fit remain available on keyboard C and D. These mappings apply
+to desktop; Android remote controls are unchanged.
 
 The mapping lives in [`native/pake_xinput.rs`](native/pake_xinput.rs)
 (`MAPPINGS`, Windows) and [`native/tv-gamepad.js`](native/tv-gamepad.js)
@@ -192,8 +196,8 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   keys (Shift for < and >) and the D / C shortcuts leave it as is. In step mode
   a CSS rule also pins captions at `bottom: 5%`; YouTube otherwise lifts them to
   `bottom: 19rem` above its (now hidden) control bar.
-- LT and RT are read from the page Gamepad API in `native/tv-gamepad.js`; they
-  are not mapped to keys natively.
+- Desktop LT/RT map to F7/F8, which seek 10 seconds and resume. On Windows,
+  native XInput trigger state is merged with page Gamepad state before dispatch.
 - Profile data (cookies, blocker cache, settings) lives in `%APPDATA%\YouTubeTV`
   on Windows and `~/Library/Application Support/YouTubeTV` on macOS.
 

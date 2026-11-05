@@ -1,0 +1,35 @@
+name: Desktop beta
+on:
+  pull_request:
+    paths: ['native/**', 'inject/**', 'scripts/**', 'package*.json', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: |
+            native/core
+            node_modules/pake-cli/src-tauri
+      - run: npm test
+      - run: npm run build
+      - name: Test native controller merge and mappings
+        run: cargo test --release --target x86_64-pc-windows-msvc --features cli-build --manifest-path node_modules/pake-cli/src-tauri/Cargo.toml --lib pake_xinput::tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-beta
+          if-no-files-found: error
+          path: |
+            YouTubeTV.msi
+            YouTubeTV.exe

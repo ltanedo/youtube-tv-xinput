@@ -12,6 +12,11 @@ const CONSOLE_USER_AGENT =
 // Pake wants a .ico on Windows and a .icns on macOS (both made from yttv-icon.png).
 const icon = process.platform === 'darwin' ? 'assets/youtubetv.icns' : 'assets/youtubetv.ico';
 
+// Pake 3.15.7 forces MSI on Windows. MSI accepts only a numeric prerelease
+// component, so beta.N is represented as -N in the Windows installer version.
+const version = require('../package.json').version;
+const appVersion = process.platform === 'win32' ? version.replace(/-beta\.(\d+)$/, '-$1') : version;
+
 const args = [
   'node_modules/pake-cli/dist/cli.js',
   'https://www.youtube.com/tv',
@@ -22,7 +27,7 @@ const args = [
   '--inject', 'inject/yttv.css',
   '--width', '1280', '--height', '720',
   '--fullscreen', '--dark-mode',
-  '--app-version', require('../package.json').version,
+  '--app-version', appVersion,
   '--keep-binary',
   ...process.argv.slice(2),
 ];
