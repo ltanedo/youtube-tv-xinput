@@ -31,5 +31,5 @@ jobs:
           name: desktop-windows-beta
           if-no-files-found: error
           path: |
-            node_modules/pake-cli/src-tauri/target/**/release/bundle/nsis/*.exe
-            node_modules/pake-cli/src-tauri/target/**/release/bundle/msi/*.msi
+            YouTubeTV.msi
+            YouTubeTV.exe
