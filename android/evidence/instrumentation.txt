@@ -1,0 +1,9 @@
+io.github.ltanedo.youtubetv.LivePlaybackTest:s_glBindAttribLocation: bind attrib 0 name position
+s_glBindAttribLocation: bind attrib 1 name color
+s_glBindAttribLocation: bind attrib 2 name localCoord
+.
+io.github.ltanedo.youtubetv.PortTest:.....
+
+Time: 17.694
+
+OK (6 tests)

@@ -6,7 +6,7 @@
   "scripts": {
     "prepare:runtime": "node scripts/prepare.cjs",
     "build": "node scripts/build.cjs",
-    "test": "cargo test --locked --manifest-path native/core/Cargo.toml && node scripts/test-gamepad.cjs"
+    "test": "cargo test --locked --manifest-path native/core/Cargo.toml && node scripts/test-gamepad.cjs && node scripts/test-android-playback.cjs"
   },
   "devDependencies": {
     "pake-cli": "3.15.7"

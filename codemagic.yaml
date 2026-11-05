@@ -1,0 +1,68 @@
+# Manual/API build; no store publishing or automatic build triggers.
+workflows:
+  android-tv-debug:
+    name: YouTubeTV Android TV APK
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      groups:
+        - yttv_signing
+      java: 17
+      node: 22
+      ndk: 28.0.13004108
+    scripts:
+      - name: Restore persistent sideload signing key
+        script: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import base64, os
+          from pathlib import Path
+          key = Path(os.environ["CM_BUILD_DIR"]) / "build" / "private-signing" / "sideload.p12"
+          key.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+          key.write_bytes(base64.b64decode(os.environ["YTTV_KEYSTORE_BASE64"], validate=True))
+          key.chmod(0o600)
+          assert os.environ["YTTV_KEYSTORE_PASSWORD"], "Signing password is required"
+          with open(os.environ["CM_ENV"], "a") as env:
+              env.write(f"YTTV_KEYSTORE_PATH={key}\n")
+          PYTHON
+      - name: Install Android SDK packages
+        script: |
+          set -euo pipefail
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$CM_ENV"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108'
+      - name: Install Rust Android targets and cargo-ndk
+        script: |
+          set -euo pipefail
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh
+            sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain 1.98.1
+          fi
+          source "$HOME/.cargo/env"
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo install cargo-ndk --locked --version 4.1.2
+          echo "PATH=$HOME/.cargo/bin:$PATH" >> "$CM_ENV"
+      - name: Test shared blocker and desktop controller scripts
+        script: |
+          set -euo pipefail
+          npm test
+      - name: Build universal APK, instrumentation APK, and lint report
+        script: |
+          set -euo pipefail
+          ./android/gradlew -p android --no-daemon assembleDebug assembleDebugAndroidTest lintDebug
+      - name: Record build provenance
+        script: |
+          set -euo pipefail
+          mkdir -p build/codemagic
+          git rev-parse HEAD > build/codemagic/source-commit.txt
+          shasum -a 256 android/app/build/outputs/apk/debug/app-debug.apk > build/codemagic/SHA256SUMS
+          cp android/app/build/outputs/apk/debug/app-debug.apk build/codemagic/YouTubeTV-android-debug.apk
+    artifacts:
+      - build/codemagic/YouTubeTV-android-debug.apk
+      - build/codemagic/source-commit.txt
+      - build/codemagic/SHA256SUMS
+      - android/app/build/outputs/apk/androidTest/debug/*.apk
+      - android/app/build/reports/lint-results-debug.*

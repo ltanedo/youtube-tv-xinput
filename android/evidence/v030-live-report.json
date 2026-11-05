@@ -1,0 +1,31 @@
+{
+  "backgroundPlay": true,
+  "screenOffPlay": true,
+  "before": {
+    "bodyClass": "WEB_PAGE_TYPE_WATCH landscape app-quality-root steel yt-icon-font-loaded",
+    "error": null,
+    "height": 1080,
+    "paused": false,
+    "readyState": 4,
+    "time": 2.159101,
+    "title": "YouTube on TV",
+    "tv": true,
+    "video": true,
+    "width": 1920
+  },
+  "after": {
+    "bodyClass": "WEB_PAGE_TYPE_WATCH landscape app-quality-root steel yt-icon-font-loaded",
+    "error": null,
+    "height": 1080,
+    "paused": false,
+    "readyState": 4,
+    "time": 7.3844,
+    "title": "YouTube on TV",
+    "tv": true,
+    "video": true,
+    "width": 1920
+  },
+  "pauseResume": true,
+  "blockedRequests": 4,
+  "filterErrors": 0
+}

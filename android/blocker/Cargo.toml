@@ -1,0 +1,17 @@
+[package]
+name = "yttv-android-blocker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pake-blocker-core = { path = "../../native/core" }
+jni = "0.21.1"
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

@@ -1,0 +1,8 @@
+
+io.github.ltanedo.youtubetv.PlaybackSettingsTest:....
+
+Time: 41.122
+
+OK (4 tests)
+
+
