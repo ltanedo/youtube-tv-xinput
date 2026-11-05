@@ -66,30 +66,33 @@ function page(host) {
 {
   // Every mapped button, same as pake_xinput.rs MAPPINGS.
   const expected = { 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight', 0: 'Enter', 1: 'Escape',
-    2: 'Space', 3: 'Slash', 9: 'Enter', 8: 'Escape', 4: 'PageUp', 5: 'PageDown', 10: 'Enter', 11: 'Escape' };
+    2: 'Space', 3: 'Slash', 9: 'Enter', 8: 'Escape', 4: 'Comma', 5: 'Period', 6: 'F7', 7: 'F8', 10: 'Enter', 11: 'Escape' };
   for (const [button, code] of Object.entries(expected)) {
     const p = page('macos');
     p.set(p.pad([+button]));
     p.tick();
     assert.deepEqual(p.taps(), [code], `button ${button}`);
   }
-  const keys = { Space: ' ', Slash: '/', Escape: 'Escape', PageDown: 'PageDown' };
+  const keys = { Space: ' ', Slash: '/', Escape: 'Escape', Period: '.' };
   for (const [code, key] of Object.entries(keys)) {
     const p = page('macos');
-    p.set(p.pad([{ Space: 2, Slash: 3, Escape: 1, PageDown: 5 }[code]]));
+    p.set(p.pad([{ Space: 2, Slash: 3, Escape: 1, Period: 5 }[code]]));
     p.tick();
     assert.equal(p.events[0].key, key);
   }
 }
 {
-  // Triggers: player events only, never keys; guide button ignored.
+  // Triggers: non-repeating seek keys; guide button ignored.
   const p = page('macos');
   p.set(p.pad([6, 7, 16]));
   p.tick();
-  assert.deepEqual(p.custom, ['pake:captions-toggle', 'pake:aspect-toggle']);
-  assert.deepEqual(p.taps(), []);
+  assert.deepEqual(p.custom, []);
+  assert.deepEqual(p.taps(), ['F7', 'F8']);
   p.tick();                               // held: no re-fire
-  assert.equal(p.custom.length, 2);
+  assert.deepEqual(p.taps(), ['F7', 'F8']);
+  p.set(p.pad([])); p.tick(100);
+  p.set(p.pad([6, 7])); p.tick();
+  assert.deepEqual(p.taps(), ['F7', 'F8', 'F7', 'F8']);
 }
 {
   // D-pad auto-repeat: 350 ms delay, then every ~110 ms.
@@ -169,9 +172,9 @@ function page(host) {
   assert.equal(p.invoked.length, 2);
   p.tick();                               // >100 ms since last send: heartbeat
   assert.equal(p.invoked.length, 3);
-  p.set(p.pad([7]));                      // RT: player event, and a changed state
+  p.set(p.pad([7]));                      // RT: native key path only, no duplicate page action
   p.tick();
-  assert.deepEqual(p.custom, ['pake:aspect-toggle']);
+  assert.deepEqual(p.custom, []);
   assert.equal(p.invoked.at(-1).buttons, 1 << 7);
   p.set(p.pad([]));
   p.tick();

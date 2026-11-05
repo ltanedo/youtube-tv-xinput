@@ -28,8 +28,6 @@
   const A = 0, B = 1, X = 2, Y = 3, LB = 4, RB = 5, LT = 6, RT = 7, BACK = 8, START = 9,
     L3 = 10, R3 = 11, D_UP = 12, D_DOWN = 13, D_LEFT = 14, D_RIGHT = 15;
 
-  // Triggers are unmapped as keys; they drive the player shortcuts in tv-player.js.
-  const TRIGGER_EVENTS = [[1 << LT, "pake:captions-toggle"], [1 << RT, "pake:aspect-toggle"]];
 
   // --- In-page key synthesis (macOS): same mapping and timing as pake_xinput.rs ---
   const KEYS = {
@@ -41,8 +39,10 @@
     Escape: { key: "Escape", keyCode: 27 },
     Space: { key: " ", keyCode: 32 },
     Slash: { key: "/", keyCode: 191 },
-    PageUp: { key: "PageUp", keyCode: 33 },
-    PageDown: { key: "PageDown", keyCode: 34 },
+    Comma: { key: ",", keyCode: 188 },
+    Period: { key: ".", keyCode: 190 },
+    F7: { key: "F7", keyCode: 118 },
+    F8: { key: "F8", keyCode: 119 },
   };
   // [button, key code name, auto-repeat]
   const MAPPINGS = [
@@ -52,7 +52,8 @@
     [X, "Space", false],      // play / pause
     [Y, "Slash", false],      // search
     [START, "Enter", false], [BACK, "Escape", false],
-    [LB, "PageUp", false], [RB, "PageDown", false],
+    [LB, "Comma", false], [RB, "Period", false],
+    [LT, "F7", false], [RT, "F8", false],
     [L3, "Enter", false], [R3, "Escape", false],
   ];
   // Left stick directions reuse the D-pad repeat logic: (positive key, negative key).
@@ -127,7 +128,6 @@
     }
   };
 
-  let lastButtons = 0;
   const poll = () => {
     if (!navigator.getGamepads) return;
     let buttons = 0;
@@ -143,10 +143,6 @@
       if (Math.abs(ay) > Math.abs(y)) y = -ay; // Gamepad API is +down; the mapping uses +up
     }
     buttons >>>= 0;
-    for (const [bit, type] of TRIGGER_EVENTS) {
-      if (buttons & bit && !(lastButtons & bit)) window.dispatchEvent(new Event(type));
-    }
-    lastButtons = buttons;
     const now = performance.now();
     if (IN_PAGE_KEYS) synthesize(buttons, x, y, now);
     else forward(buttons, x, y, now);
