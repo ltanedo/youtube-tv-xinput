@@ -142,6 +142,8 @@
     // Hide the paused overlay (title, controls, related videos) so the frame
     // is visible; showOverlay() brings it back. Stepping again while a resume
     // is pending cancels it, so the pause below doesn't show the overlay.
+    if (video === seekVideo && video.seeking && seekTarget !== null) stepTarget = seekTarget;
+    else if (!video.paused) stepTarget = video.currentTime;
     seekTarget = null;
     seekVideo = null;
     stopOverlayTimers();
@@ -168,7 +170,7 @@
     const ranges = video.seekable;
     if (!ranges?.length) return;
     const base = video === seekVideo && video.seeking && seekTarget !== null ? seekTarget : video.currentTime;
-    let target = base + direction * 10;
+    const target = base + direction * 10;
     // Clamp to an actual seekable range (also handles sliding live windows).
     let nearest = ranges.start(0);
     let distance = Infinity;

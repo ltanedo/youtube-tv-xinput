@@ -52,6 +52,7 @@ function fixture(host = 'macos') {
  p.hold(); assert.equal(p.plays, 1);
  p.press(7); assert.equal(p.seeks.at(-1), 70); assert.equal(p.plays, 2);
  p.press(6); assert.equal(p.seeks.at(-1), 60); assert.equal(p.plays, 3);
+ p.press(4); p.press(5); assert.equal(p.seeks.at(-1), 60 + 1/30); assert.equal(p.video.paused, true);
  p.settled(); p.video.currentTime = 3; p.press(6); assert.equal(p.seeks.at(-1), 0);
  p.settled(); p.video.currentTime = 98; p.press(7); assert.equal(p.seeks.at(-1), 100);
 }
