@@ -24,6 +24,8 @@ const args = [
   '--fullscreen', '--dark-mode',
   '--app-version', require('../package.json').version,
   '--keep-binary',
+  // MSI rejects textual prerelease versions (e.g. beta.1); NSIS supports them.
+  ...(process.platform === 'win32' ? ['--targets', 'nsis'] : []),
   ...process.argv.slice(2),
 ];
 execFileSync(process.execPath, args, { stdio: 'inherit' });
