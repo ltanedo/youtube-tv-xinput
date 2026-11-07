@@ -2,11 +2,21 @@ name: Desktop beta
 on:
   pull_request:
     paths: ['native/**', 'inject/**', 'scripts/**', 'package*.json', '.github/workflows/desktop.yml']
+  push:
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,21 +25,69 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - run: npm ci
       - uses: Swatinem/rust-cache@v2
         with:
+          key: ${{ matrix.arch }}
           cache-on-failure: true
           workspaces: |
             native/core
             node_modules/pake-cli/src-tauri
       - run: npm test
-      - run: npm run build
+        if: matrix.arch == 'x64'
+      # Pake's --targets picks the Windows architecture (x64 / arm64); the ARM64
+      # installer is cross-compiled on the x64 runner.
+      - run: npm run build -- --targets ${{ matrix.arch }}
       - name: Test native controller merge and mappings
+        if: matrix.arch == 'x64'
         run: cargo test --release --target x86_64-pc-windows-msvc --features cli-build --manifest-path node_modules/pake-cli/src-tauri/Cargo.toml --lib pake_xinput::tests
+      - name: Name the installer after the release version and architecture
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          mv YouTubeTV.msi "YouTubeTV-${version}-Windows-${{ matrix.arch }}.msi"
+          mv YouTubeTV.exe "YouTubeTV-${version}-Windows-${{ matrix.arch }}-portable.exe"
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-windows-beta
+          name: desktop-windows-${{ matrix.arch }}
           if-no-files-found: error
           path: |
-            YouTubeTV.msi
-            YouTubeTV.exe
+            YouTubeTV-*.msi
+            YouTubeTV-*-portable.exe
+
+  # Pushing a v* tag publishes the Windows installers (plus checksums) as a
+  # GitHub release; a tag with a prerelease suffix (v2.2.0-beta.2) is marked
+  # as a prerelease. Re-running on an existing tag replaces its assets.
+  release:
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-windows-*
+          path: dist
+          merge-multiple: true
+      - name: Check the tag matches package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          [ "v${version}" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != package.json v${version}"; exit 1; }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum YouTubeTV-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          args=(--title "YouTube TV ${GITHUB_REF_NAME}" --notes-file ../.github/release-notes.md)
+          case "${GITHUB_REF_NAME}" in *-*) args+=(--prerelease);; esac
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber YouTubeTV-* SHA256SUMS.txt
+          else
+            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" "${args[@]}" YouTubeTV-* SHA256SUMS.txt
+          fi

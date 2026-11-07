@@ -2,7 +2,8 @@
 // Adds: native ad blocker (WebView2 request interception on Windows, WKContentRuleList
 // on macOS, plus shared scriptlets), the controller bridge (XInput on Windows, in-page
 // Gamepad API on macOS), TV navigator spoof, background playback, player shortcuts
-// (ultrawide fill, subtitles, frame step), and the black-background startup patch.
+// (ultrawide fill, subtitles, frame step), windowed-menu / fullscreen-playback switching, and the
+// black-background startup patch.
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
@@ -89,13 +90,15 @@ replace('src/app/window.rs',
 //                    pake_xinput (the WebView2 process sees the pad when the app process does
 //                    not), on macOS turn it into key events in the page (see native/tv-gamepad.js)
 // player.js          ultrawide fill, subtitles and frame-step shortcuts (CSS in inject/yttv.css)
+// fullscreen.js      windowed browse UI; native fullscreen only while a video plays on the watch page
 replace('src/app/window.rs', '        .initialization_script(include_str!("../inject/auth.js"))',
   `        .initialization_script(include_str!("../inject/auth.js"))
         .initialization_script(include_str!("../../pake-tv/navigator.js"))
         .initialization_script(include_str!("../../pake-tv/background-play.js"))
         .initialization_script(if cfg!(target_os = "macos") { "window.__pakeHost = 'macos';" } else { "window.__pakeHost = 'windows';" })
         .initialization_script(include_str!("../../pake-tv/gamepad.js"))
-        .initialization_script(include_str!("../../pake-tv/player.js"))`);
+        .initialization_script(include_str!("../../pake-tv/player.js"))
+        .initialization_script(include_str!("../../pake-tv/fullscreen.js"))`);
 
 // --- Cargo dependencies ---
 // Shared blocker core (both platforms): next to the other general dependencies.
@@ -124,6 +127,20 @@ replace('Cargo.toml', '  "WKWebViewConfiguration",', '  "WKWebViewConfiguration"
   fs.writeFileSync(cargo, s.replace(anchor, anchor + block));
 }
 
+// --- Pake CLI: Windows ARM64 installer lookup ---
+// Tauri names the MSI `<name>_<version>_arm64_<lang>.msi`, but Pake 3.15.7 looks for
+// `_aarch64_` (its macOS display name) and fails to copy the finished installer.
+{
+  const cli = path.join(pake, 'dist/cli.js');
+  const old = '        const targetArch = this.getArchDisplayName(this.buildArch);\n';
+  const updated = '        const targetArch = this.buildArch === \'arm64\' ? \'arm64\' : this.getArchDisplayName(this.buildArch); // youtube-tv-xinput: Tauri MSI naming\n';
+  const s = fs.readFileSync(cli, 'utf8');
+  if (!s.includes(updated)) {
+    if (s.split(old).length !== 2) throw Error('Unexpected source anchor: dist/cli.js: ' + old.trim());
+    fs.writeFileSync(cli, s.replace(old, updated));
+  }
+}
+
 // --- Copy checked-in sources into the runtime ---
 fs.copyFileSync(mac ? 'native/pake_adblock_macos.rs' : 'native/pake_adblock.rs', path.join(runtime, 'src/pake_adblock.rs'));
 if (win) fs.copyFileSync('native/pake_xinput.rs', path.join(runtime, 'src/pake_xinput.rs'));
@@ -134,6 +151,7 @@ fs.copyFileSync('native/tv-navigator.js', path.join(runtime, 'pake-tv/navigator.
 fs.copyFileSync('native/tv-background-play.js', path.join(runtime, 'pake-tv/background-play.js'));
 fs.copyFileSync('native/tv-gamepad.js', path.join(runtime, 'pake-tv/gamepad.js'));
 fs.copyFileSync('native/tv-player.js', path.join(runtime, 'pake-tv/player.js'));
+fs.copyFileSync('native/tv-fullscreen.js', path.join(runtime, 'pake-tv/fullscreen.js'));
 fs.cpSync('native/core', path.join(runtime, 'pake-adblock/core'), {recursive:true, filter: p => !p.split(path.sep).includes('target')});
 if (fs.existsSync('native/runtime-Cargo.lock')) fs.copyFileSync('native/runtime-Cargo.lock', path.join(runtime, 'Cargo.lock'));
 if (fs.existsSync('native/runtime-package-lock.json')) fs.copyFileSync('native/runtime-package-lock.json', path.join(pake, 'package-lock.json'));
