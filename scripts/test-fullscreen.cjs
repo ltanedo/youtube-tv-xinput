@@ -61,6 +61,9 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     playing: async (main = true) => { for (const fn of listeners.playing || []) fn({ target: video(main) }); await flush(); },
     // The Shield panel's Go windowed / Go fullscreen button.
     toggle: async () => { window.dispatchEvent(new CustomEvent('pake:fullscreen-toggle')); await flush(); },
+    // Same click, but without letting the bridge answer yet.
+    click: () => { window.dispatchEvent(new CustomEvent('pake:fullscreen-toggle')); },
+    flush,
     // Fire every pending timer whose delay has elapsed.
     elapse: async (ms) => {
       for (const [id, t] of [...timers]) if (t.ms <= ms) { timers.delete(id); t.fn(); }
@@ -164,6 +167,26 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     assert.deepEqual(p.calls, [true, false, true, false], 'already windowed when leaving the watch page');
     p.setWatch(true); await p.playing();
     assert.deepEqual(p.calls, [true, false, true, false, true], 'the next video goes fullscreen again');
+  }
+  {
+    // Race: a `playing` event lands between the Go windowed click and the bridge's answer.
+    const p = page();
+    p.setWatch(true); await p.playing();
+    p.click();                              // Go windowed, bridge not answered yet
+    await p.playing();                      // buffering resumes in the same tick
+    await p.flush();
+    assert.deepEqual(p.calls, [true, false], 'the click wins; playback does not re-enter fullscreen');
+    assert.equal(p.fullscreen, false);
+    p.click(); await p.playing(); await p.flush();
+    assert.deepEqual(p.calls, [true, false, true], 'Go fullscreen with a racing playing event: fullscreen once');
+    // First-ever click while watching and windowed by F11 (state never observed): the
+    // real state is read and the window goes fullscreen; the flag is corrected.
+    const q = page();
+    q.setWatch(true);
+    q.click(); await q.playing(); await q.flush();
+    assert.deepEqual(q.calls, [true]);
+    await q.playing();
+    assert.deepEqual(q.calls, [true], 'flag corrected after the real state was read');
   }
   {
     // Go fullscreen from the browse page: stays until toggled back or a watch page is left.

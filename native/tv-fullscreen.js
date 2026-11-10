@@ -51,15 +51,17 @@
   // don't flood the IPC bridge and a manual F11 toggle is respected rather
   // than fought.
   let pending = Promise.resolve();
+  let lastKnown = null; // last window state read from or written to the bridge
   const change = (decide) => {
     const w = appWindow();
     if (!w) return; // Tauri bridge not injected yet; the next event tries again.
     pending = pending
       .then(() => w.isFullscreen())
       .then((is) => {
+        lastKnown = is;
         const on = decide(is);
         if (on === is) return undefined;
-        return Promise.resolve(w.setFullscreen(on)).then(() => announce(on));
+        return Promise.resolve(w.setFullscreen(on)).then(() => { lastKnown = on; announce(on); });
       })
       .catch((error) => { console.warn("[Pake] fullscreen change failed:", error); });
   };
@@ -89,6 +91,11 @@
   // Shield panel button: flip the native state. Going windowed mid-video is
   // remembered for this watch page; going fullscreen re-arms playback control.
   window.addEventListener("pake:fullscreen-toggle", () => {
+    if (!appWindow()) return;
+    // Decide synchronously from the last observed state, so a `playing` event
+    // that lands before the bridge answers can't undo the click; the decision
+    // is confirmed against the real state once it is read.
+    manualWindowed = watching() && lastKnown !== false;
     change((is) => {
       const on = !is;
       manualWindowed = !on && watching();
