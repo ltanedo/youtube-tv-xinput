@@ -45,6 +45,7 @@
   // The user chose windowed from the Shield panel while watching: leave the
   // window alone until the watch page changes or they ask for fullscreen again.
   let manualWindowed = false;
+  let watchGeneration = 0; // bumped each time the watch page is left
 
   // Changes are serialized, and the window state is re-read before each one,
   // so repeated `playing` events (every seek, buffer stall, play after pause)
@@ -93,10 +94,13 @@
   // Shield panel button: flip the native state. Going windowed mid-video is
   // remembered for this watch page; going fullscreen re-arms playback control.
   window.addEventListener("pake:fullscreen-toggle", () => {
-    const onWatchPage = watching(); // what the user saw when clicking, not what the page is once the bridge answers
+    // The watch page the user clicked on; the flag is only set if that same
+    // page is still showing once the bridge answers (not after Back, and not
+    // on a next video that autoplayed meanwhile).
+    const generation = watching() ? watchGeneration : -1;
     change((is) => {
       const on = !is;
-      manualWindowed = !on && onWatchPage;
+      manualWindowed = !on && generation === watchGeneration;
       if (on) cancelExit();
       return on;
     });
@@ -104,7 +108,7 @@
 
   const onPageTypeChange = () => {
     if (watching()) cancelExit();
-    else { manualWindowed = false; scheduleExit(); }
+    else { manualWindowed = false; watchGeneration++; scheduleExit(); }
   };
   const observeBody = () => {
     const body = document.body;

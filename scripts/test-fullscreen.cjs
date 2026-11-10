@@ -222,6 +222,26 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     assert.deepEqual(q.calls, []);
   }
   {
+    // Go windowed click still in flight when the watch page is left: the flag must not
+    // survive onto the browse page or the next video.
+    const p = page();
+    p.setWatch(true); await p.playing();
+    p.click();                              // Go windowed, bridge not answered yet
+    p.setWatch(false); p.setWatch(true);    // autoplay-next swaps the watch page meanwhile
+    await p.flush();
+    assert.deepEqual(p.calls, [true, false]);
+    await p.playing();
+    assert.deepEqual(p.calls, [true, false, true], 'the next video goes fullscreen');
+    const q = page();
+    q.setWatch(true); await q.playing();
+    q.click();
+    q.setWatch(false);                      // Back to the browse page meanwhile
+    await q.flush(); await q.elapse(1000);
+    assert.deepEqual(q.calls, [true, false]);
+    q.setWatch(true); await q.playing();
+    assert.deepEqual(q.calls, [true, false, true], 'a later video goes fullscreen');
+  }
+  {
     // Go fullscreen from the browse page: stays until toggled back or a watch page is left.
     const p = page();
     await p.toggle();
