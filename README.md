@@ -14,9 +14,13 @@ bundling a browser.
   with the native title bar, so it can be dragged onto any monitor and resized
   like any other app. The window goes fullscreen, on the monitor it is on, only
   when a video actually starts playing, and returns to the window when you
-  leave the player (Back, search, end of a playlist). Press **F11** (Windows)
-  or **Ctrl+Cmd+F** (macOS) to toggle fullscreen by hand at any time; the next
-  video that starts playing goes fullscreen again. Window size and position
+  leave the player (Back, search, end of a playlist). To move a playing video
+  to another monitor, open the **Shield** panel (move the mouse, or
+  Ctrl+Alt+B / Cmd+Option+B) and press **Go windowed**: the window stays
+  windowed for that video while you drag it, then **Go fullscreen** (or the
+  next video) makes it fullscreen on the monitor it is now on. **F11**
+  (Windows) or **Ctrl+Cmd+F** (macOS) also toggle by hand; after those, the
+  next video that starts playing goes fullscreen again. Window size and position
   are remembered across restarts.
 - **Xbox / game controllers** — on Windows any XInput-compatible controller
   (Xbox One/Series, Xbox 360, or third-party pads in XInput mode) drives the UI
@@ -33,6 +37,7 @@ bundling a browser.
   macOS adds a WKContentRuleList for known ad endpoints. Enabled by default.
   Press **Ctrl+Alt+B** (Windows) or **Cmd+Option+B** (macOS), or move the
   mouse and click **Shield**, for the toggle, diagnostics and filter updates.
+  The same panel has a **Go windowed / Go fullscreen** button.
   See [native/README.md](native/README.md) for coverage, limitations and
   provenance.
 - **Background playback** — video keeps playing when you switch to another
@@ -68,12 +73,14 @@ bundling a browser.
 | B / Back (View) / R3     | Escape        | Back                     |
 | X                        | Space         | Play / pause             |
 | Y                        | `/`           | Search                   |
-| LB / RB                  | `,` / `.`     | Frame backward / forward; stays paused |
+| LB / RB                  | `,` / `.`     | Frame backward / forward; hold to keep stepping; stays paused |
 | LT / RT                  | F7 / F8       | Seek back / forward 10 seconds and play |
 
 Bumpers use the existing frame-step behavior: the first press during playback
-pauses, and subsequent presses move one frame. Each trigger press seeks and
-resumes playback, even when paused. Holding a bumper or trigger does not repeat.
+pauses, and subsequent presses move one frame. Holding a bumper keeps stepping
+(after the same 350 ms delay and at the same rate as the D-pad). Each trigger
+press seeks and resumes playback, even when paused; holding a trigger does not
+repeat.
 Captions and fill/fit remain available on keyboard C and D. These mappings apply
 to desktop; Android remote controls are unchanged.
 

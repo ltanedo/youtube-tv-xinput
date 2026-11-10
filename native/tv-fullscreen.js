@@ -14,6 +14,14 @@
 // decides which monitor the app covers. F11 (Windows, a Pake default) still
 // toggles it by hand; the next video that starts playing re-applies it.
 //
+// The Shield panel (native/ui.js) has a Go windowed / Go fullscreen button that
+// raises `pake:fullscreen-toggle` here. Going windowed from the panel while a
+// video plays sticks for that watch page (so the window can be dragged to
+// another monitor without playback snapping it back); the next watch page, or
+// the button again, goes fullscreen. Every change is announced with
+// `pake:fullscreen-state` ({ detail: { fullscreen } }) so the button's label
+// follows the real window state.
+//
 // Watch-page detection is the same body class tv-player.js keys off
 // (WEB_PAGE_TYPE_WATCH). Home-screen previews also fire `playing`, but they
 // happen outside the watch page, so they never trigger fullscreen.
@@ -30,20 +38,32 @@
   const appWindow = () => {
     try { return window.__TAURI__?.window?.getCurrentWindow?.() || null; } catch (_) { return null; }
   };
+  const announce = (fullscreen) => {
+    try { window.dispatchEvent(new CustomEvent("pake:fullscreen-state", { detail: { fullscreen } })); } catch (_) {}
+  };
 
-  // Last state requested from the native window, so repeated `playing` events
-  // (every seek, buffer stall, play after pause) don't flood the IPC bridge.
-  // It's re-read from the window before each change so a manual F11 toggle is
-  // respected rather than fought.
+  // The user chose windowed from the Shield panel while watching: leave the
+  // window alone until the watch page changes or they ask for fullscreen again.
+  let manualWindowed = false;
+
+  // Changes are serialized, and the window state is re-read before each one,
+  // so repeated `playing` events (every seek, buffer stall, play after pause)
+  // don't flood the IPC bridge and a manual F11 toggle is respected rather
+  // than fought.
   let pending = Promise.resolve();
-  const setFullscreen = (on) => {
+  const change = (decide) => {
     const w = appWindow();
     if (!w) return; // Tauri bridge not injected yet; the next event tries again.
     pending = pending
       .then(() => w.isFullscreen())
-      .then((is) => (is === on ? undefined : w.setFullscreen(on)))
+      .then((is) => {
+        const on = decide(is);
+        if (on === is) return undefined;
+        return Promise.resolve(w.setFullscreen(on)).then(() => announce(on));
+      })
       .catch((error) => { console.warn("[Pake] fullscreen change failed:", error); });
   };
+  const setFullscreen = (on) => change(() => on);
 
   let exitTimer = 0;
   const cancelExit = () => { if (exitTimer) { clearTimeout(exitTimer); exitTimer = 0; } };
@@ -62,12 +82,24 @@
     if (!video?.classList?.contains?.("html5-main-video")) return;
     if (!watching()) return;
     cancelExit();
+    if (manualWindowed) return;
     setFullscreen(true);
   }, true);
 
+  // Shield panel button: flip the native state. Going windowed mid-video is
+  // remembered for this watch page; going fullscreen re-arms playback control.
+  window.addEventListener("pake:fullscreen-toggle", () => {
+    change((is) => {
+      const on = !is;
+      manualWindowed = !on && watching();
+      if (on) cancelExit();
+      return on;
+    });
+  });
+
   const onPageTypeChange = () => {
     if (watching()) cancelExit();
-    else scheduleExit();
+    else { manualWindowed = false; scheduleExit(); }
   };
   const observeBody = () => {
     const body = document.body;

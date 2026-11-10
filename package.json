@@ -1,6 +1,6 @@
 {
   "name": "youtube-tv-xinput",
-  "version": "2.2.0-beta.2",
+  "version": "2.2.0-beta.3",
   "private": true,
   "description": "YouTube TV (leanback) client built with Pake for Windows and macOS, with Xbox/game controller support and a native ad blocker",
   "scripts": {
