@@ -179,8 +179,19 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     assert.equal(p.fullscreen, false);
     p.click(); await p.playing(); await p.flush();
     assert.deepEqual(p.calls, [true, false, true], 'Go fullscreen with a racing playing event: fullscreen once');
-    // First-ever click while watching and windowed by F11 (state never observed): the
-    // real state is read and the window goes fullscreen; the flag is corrected.
+    // F11 after Go windowed (a change the script never sees), then a click racing a
+    // playing event: the click reads the real state and wins.
+    const r = page();
+    r.setWatch(true); await r.playing(); await r.toggle();
+    await r.f11();                          // user goes fullscreen by hand
+    assert.equal(r.fullscreen, true);
+    r.click(); await r.playing(); await r.flush();
+    assert.deepEqual(r.calls, [true, false, false], 'Go windowed wins over the racing playing event');
+    assert.equal(r.fullscreen, false);
+    await r.playing();
+    assert.deepEqual(r.calls, [true, false, false], 'and sticks');
+    // First-ever click while watching but windowed (state never observed): the
+    // window goes fullscreen and the racing playing event is a no-op.
     const q = page();
     q.setWatch(true);
     q.click(); await q.playing(); await q.flush();
