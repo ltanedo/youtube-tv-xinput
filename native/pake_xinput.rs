@@ -31,7 +31,7 @@ use windows::Win32::{
         Input::KeyboardAndMouse::{
             MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
             KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_DOWN, VK_ESCAPE,
-            VK_LEFT, VK_NEXT, VK_OEM_2, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_UP,
+            VK_LEFT, VK_NEXT, VK_OEM_2, VK_OEM_COMMA, VK_OEM_PERIOD, VK_F7, VK_F8, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_UP,
         },
         Input::XboxController::{XInputGetState, XINPUT_STATE},
         WindowsAndMessaging::{GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId, GA_ROOT},
@@ -67,6 +67,9 @@ const L_THUMB: u16 = 0x0040;
 const R_THUMB: u16 = 0x0080;
 const L_SHOULDER: u16 = 0x0100;
 const R_SHOULDER: u16 = 0x0200;
+// Spare XInput button bits represent analog triggers in the merged state.
+const L_TRIGGER: u16 = 0x0400;
+const R_TRIGGER: u16 = 0x0800;
 const BTN_A: u16 = 0x1000;
 const BTN_B: u16 = 0x2000;
 const BTN_X: u16 = 0x4000;
@@ -75,7 +78,7 @@ const BTN_Y: u16 = 0x8000;
 #[derive(Clone, Copy)]
 struct KeyMapping { flag: u16, vk: VIRTUAL_KEY, repeat: bool }
 
-const MAPPINGS: [KeyMapping; 14] = [
+const MAPPINGS: [KeyMapping; 16] = [
     KeyMapping { flag: D_UP, vk: VK_UP, repeat: true },
     KeyMapping { flag: D_DOWN, vk: VK_DOWN, repeat: true },
     KeyMapping { flag: D_LEFT, vk: VK_LEFT, repeat: true },
@@ -86,8 +89,10 @@ const MAPPINGS: [KeyMapping; 14] = [
     KeyMapping { flag: BTN_Y, vk: VK_OEM_2, repeat: false },      // slash: search
     KeyMapping { flag: START, vk: VK_RETURN, repeat: false },
     KeyMapping { flag: BACK, vk: VK_ESCAPE, repeat: false },
-    KeyMapping { flag: L_SHOULDER, vk: VK_PRIOR, repeat: false }, // PageUp
-    KeyMapping { flag: R_SHOULDER, vk: VK_NEXT, repeat: false },  // PageDown
+    KeyMapping { flag: L_SHOULDER, vk: VK_OEM_COMMA, repeat: false }, // frame back
+    KeyMapping { flag: R_SHOULDER, vk: VK_OEM_PERIOD, repeat: false }, // frame forward
+    KeyMapping { flag: L_TRIGGER, vk: VK_F7, repeat: false }, // seek back + play
+    KeyMapping { flag: R_TRIGGER, vk: VK_F8, repeat: false }, // seek forward + play
     KeyMapping { flag: L_THUMB, vk: VK_RETURN, repeat: false },
     KeyMapping { flag: R_THUMB, vk: VK_ESCAPE, repeat: false },
 ];
@@ -108,11 +113,11 @@ const SHELL_CLASSES: [&str; 6] = [
 ];
 
 /// Standard-mapping Gamepad API buttons (bit n = buttons[n].pressed) -> XInput masks.
-/// Triggers (6, 7) and the guide button (16) are not mapped.
+/// The guide button (16) is not mapped.
 fn standard_buttons(bits: u32) -> u16 {
-    const MAP: [(u32, u16); 14] = [
+    const MAP: [(u32, u16); 16] = [
         (0, BTN_A), (1, BTN_B), (2, BTN_X), (3, BTN_Y), (4, L_SHOULDER), (5, R_SHOULDER),
-        (8, BACK), (9, START), (10, L_THUMB), (11, R_THUMB),
+        (6, L_TRIGGER), (7, R_TRIGGER), (8, BACK), (9, START), (10, L_THUMB), (11, R_THUMB),
         (12, D_UP), (13, D_DOWN), (14, D_LEFT), (15, D_RIGHT),
     ];
     MAP.iter().filter(|(bit, _)| bits & (1 << bit) != 0).fold(0, |mask, (_, xi)| mask | xi)
@@ -151,7 +156,9 @@ impl PadState {
     }
     fn merge_xinput(&mut self, state: &XINPUT_STATE) {
         let pad = &state.Gamepad;
-        self.merge(pad.wButtons.0, pad.sThumbLX as f32 / 32768.0, pad.sThumbLY as f32 / 32768.0);
+        let triggers = if pad.bLeftTrigger > 127 { L_TRIGGER } else { 0 }
+            | if pad.bRightTrigger > 127 { R_TRIGGER } else { 0 };
+        self.merge(pad.wButtons.0 | triggers, pad.sThumbLX as f32 / 32768.0, pad.sThumbLY as f32 / 32768.0);
     }
     /// Any button or stick deflection: used only to decide whether to wake the window.
     fn active(&self) -> bool {
@@ -406,7 +413,29 @@ mod tests {
         assert_eq!(standard_buttons((1 << 1) | (1 << 12)), BTN_B | D_UP);
         assert_eq!(standard_buttons((1 << 8) | (1 << 9)), BACK | START);
         assert_eq!(standard_buttons((1 << 14) | (1 << 15)), D_LEFT | D_RIGHT);
-        assert_eq!(standard_buttons((1 << 6) | (1 << 7) | (1 << 16)), 0); // triggers + guide
+        assert_eq!(standard_buttons((1 << 6) | (1 << 7) | (1 << 16)), L_TRIGGER | R_TRIGGER); // guide ignored
+    }
+
+    #[test]
+    fn transport_buttons_merge_once_and_do_not_repeat() {
+        let mut native = XINPUT_STATE::default();
+        native.Gamepad.bLeftTrigger = 128;
+        native.Gamepad.bRightTrigger = 255;
+        let mut pad = PadState::default();
+        pad.merge_xinput(&native);
+        pad.merge(standard_buttons((1 << 4) | (1 << 5) | (1 << 6) | (1 << 7)), 0.0, 0.0);
+        let mut controller = Controller::new();
+        let now = Instant::now() + PRESS_COOLDOWN;
+        let keys = controller.poll(&pad, now);
+        assert_eq!(keys, vec![VK_OEM_COMMA, VK_OEM_PERIOD, VK_F7, VK_F8]);
+        assert!(controller.poll(&pad, now + Duration::from_secs(1)).is_empty());
+        controller.poll(&PadState::default(), now + Duration::from_secs(2));
+        assert_eq!(controller.poll(&pad, now + Duration::from_secs(3)), keys);
+        native.Gamepad.bLeftTrigger = 127;
+        native.Gamepad.bRightTrigger = 0;
+        let mut neutral = PadState::default();
+        neutral.merge_xinput(&native);
+        assert_eq!(neutral.buttons, 0);
     }
 
     #[test]

@@ -1,13 +1,13 @@
 // Runs as a WebView2 initialization script (top frame only).
 // Player shortcuts the leanback UI lacks, active while a video plays:
 //
-// - Ultrawide fill (D, or right trigger via tv-gamepad.js). The leanback player
+// - Ultrawide fill (D). The leanback player
 //   sizes the <video> to the stream's aspect ratio, so a 16:9 video on a 21:9
 //   screen gets black bars left and right. On screens wider than 16:9 this marks
 //   <html data-pake-fill> while a landscape video would be pillarboxed;
 //   inject/yttv.css then scales the video to cover the screen, cropping top and
 //   bottom instead.
-// - Subtitles on/off (C, or left trigger). Switches the player's caption track,
+// - Subtitles on/off (C). Switches the player's caption track,
 //   the same state the on-screen CC button shows, and turns back on the last
 //   language used. The choice is re-applied to every video, and changes made
 //   with the CC button are adopted as the new choice.
@@ -142,6 +142,10 @@
     // Hide the paused overlay (title, controls, related videos) so the frame
     // is visible; showOverlay() brings it back. Stepping again while a resume
     // is pending cancels it, so the pause below doesn't show the overlay.
+    if (video === seekVideo && video.seeking && seekTarget !== null) stepTarget = seekTarget;
+    else if (!video.paused) stepTarget = video.currentTime;
+    seekTarget = null;
+    seekVideo = null;
     stopOverlayTimers();
     document.documentElement.setAttribute("data-pake-stepping", "");
     if (!video.paused) { p.pauseVideo(); toast("Paused: frame step"); return; }
@@ -154,6 +158,34 @@
   };
   const stepBack = () => stepFrame(-1);
   const stepForward = () => stepFrame(1);
+
+  // Desktop triggers seek immediately and always resume, including from step mode.
+  // Chain rapid taps while a seek is pending; reset the chain on a new video.
+  let seekTarget = null;
+  let seekVideo = null;
+  const seekAndPlay = (direction) => {
+    const p = watching() && player();
+    const video = document.querySelector("video.html5-main-video");
+    if (!p?.seekTo || !p?.playVideo || !video || !Number.isFinite(video.currentTime)) return;
+    const ranges = video.seekable;
+    if (!ranges?.length) return;
+    const base = video === seekVideo && video.seeking && seekTarget !== null ? seekTarget : video.currentTime;
+    const target = base + direction * 10;
+    // Clamp to an actual seekable range (also handles sliding live windows).
+    let nearest = ranges.start(0);
+    let distance = Infinity;
+    for (let i = 0; i < ranges.length; i++) {
+      const candidate = Math.max(ranges.start(i), Math.min(target, ranges.end(i)));
+      if (Math.abs(candidate - target) < distance) { nearest = candidate; distance = Math.abs(candidate - target); }
+    }
+    seekTarget = nearest;
+    seekVideo = video;
+    p.seekTo(seekTarget, true);
+    p.playVideo();
+  };
+  for (const type of ["loadedmetadata", "emptied", "seeked"]) {
+    document.addEventListener(type, () => { seekTarget = null; seekVideo = null; }, true);
+  }
 
   // Overlay around frame step. Resuming playback from step mode keeps the
   // overlay hidden until YouTube's own controls have auto-hidden, then drops
@@ -219,6 +251,10 @@
   // never swallow typing on the search page. Shift is allowed: < and > are
   // Shift+Comma / Shift+Period.
   const KEYS = { KeyD: toggleAspect, KeyC: toggleCaptions, Comma: stepBack, Period: stepForward };
+  if (["windows", "macos"].includes(window.__pakeHost)) {
+    KEYS.F7 = () => seekAndPlay(-1);
+    KEYS.F8 = () => seekAndPlay(1);
+  }
   const REPEATS = new Set([stepBack, stepForward]);
   const shortcut = (event) => {
     const action = KEYS[event.code];
