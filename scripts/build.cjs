@@ -26,7 +26,7 @@ const args = [
   '--user-agent', CONSOLE_USER_AGENT,
   '--inject', 'inject/yttv.css',
   '--width', '1280', '--height', '720',
-  '--fullscreen', '--dark-mode',
+  '--dark-mode',
   '--app-version', appVersion,
   '--keep-binary',
   ...process.argv.slice(2),

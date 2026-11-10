@@ -9,8 +9,15 @@ bundling a browser.
 ## Features
 
 - **YouTube TV interface** — spoofs a console user agent (header, client hints
-  and `navigator.*`) so YouTube serves the 10-foot leanback UI. Starts fullscreen;
-  press **F11** (Windows) or **Ctrl+Cmd+F** (macOS) to toggle.
+  and `navigator.*`) so YouTube serves the 10-foot leanback UI.
+- **Windowed menu, fullscreen playback** — the app starts in a normal window
+  with the native title bar, so it can be dragged onto any monitor and resized
+  like any other app. The window goes fullscreen, on the monitor it is on, only
+  when a video actually starts playing, and returns to the window when you
+  leave the player (Back, search, end of a playlist). Press **F11** (Windows)
+  or **Ctrl+Cmd+F** (macOS) to toggle fullscreen by hand at any time; the next
+  video that starts playing goes fullscreen again. Window size and position
+  are remembered across restarts.
 - **Xbox / game controllers** — on Windows any XInput-compatible controller
   (Xbox One/Series, Xbox 360, or third-party pads in XInput mode) drives the UI
   natively; up to four controllers are polled and input is only injected while
@@ -50,7 +57,7 @@ bundling a browser.
   Play (Space / X, or Enter / A on the play button) resumes straight into
   playback without the overlay popping up; any other key brings it back.
 - **Black startup / transition surfaces** — the window, WebView and page are
-  black so fullscreen and startup never flash white.
+  black so fullscreen transitions and startup never flash white.
 
 ## Controller mapping
 
@@ -132,7 +139,8 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
                                                     ├─ pake-tv/navigator.js  navigator.userAgent/platform spoof
                                                     ├─ pake-tv/background-play.js  visibility spoof for background playback
                                                     ├─ pake-tv/gamepad.js    Gamepad API poll → page_gamepad (Windows) or key events (macOS)
-                                                    └─ pake-tv/player.js     D / C / < > shortcuts: ultrawide fill, subtitles, frame step
+                                                    ├─ pake-tv/player.js     D / C / < > shortcuts: ultrawide fill, subtitles, frame step
+                                                    └─ pake-tv/fullscreen.js windowed menu; native fullscreen only while a video plays
 ```
 
 - The window starts on `about:blank`, registers the platform's request
@@ -172,6 +180,15 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   launched with `--disable-backgrounding-occluded-windows
   --disable-renderer-backgrounding --disable-background-timer-throttling
   --disable-background-media-suspend`.
+- Windowed menu / fullscreen playback: `native/tv-fullscreen.js` watches the
+  `WEB_PAGE_TYPE_WATCH` body class and the main video's `playing` event. A video
+  starting on the watch page calls Tauri's native `setFullscreen(true)` through
+  `window.__TAURI__`; leaving the watch page calls `setFullscreen(false)` after a
+  400 ms grace period so watch-to-watch transitions (autoplay next) never flash
+  the window. The native state is re-read before each change, so F11 is never
+  fought. Home-screen previews play outside the watch page and are ignored.
+  Pake's `--fullscreen` launch flag is no longer used, so the window keeps its
+  native title bar and tauri-plugin-window-state restores its size and position.
 - Ultrawide fill: the leanback player sizes the `<video>` to the stream's aspect
   ratio inside a full-window player. `native/tv-player.js` compares that ratio
   with the window's and sets `data-pake-fill` on `<html>`; a rule in
