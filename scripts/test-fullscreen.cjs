@@ -200,6 +200,28 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     assert.deepEqual(q.calls, [true], 'flag corrected after the real state was read');
   }
   {
+    // The watch page changes while the bridge is busy.
+    const p = page();
+    p.setWatch(true);
+    p.click(); /* nothing yet */ await p.flush();
+    assert.deepEqual(p.calls, [true], 'Go fullscreen from a watch page before any video plays');
+    p.setWatch(false);                      // user backs out to the browse page ...
+    p.click();                              // ... and clicks Go windowed there
+    p.setWatch(true);                       // ... but a watch page opens before the bridge answers
+    await p.flush();
+    assert.deepEqual(p.calls, [true, false]);
+    await p.playing();
+    assert.deepEqual(p.calls, [true, false, true], 'the click was made on the browse page, so the new video goes fullscreen');
+    const q = page();
+    q.setWatch(true);
+    q.playing();                            // playing queued, bridge not answered yet
+    q.setWatch(false);                      // user leaves the watch page in the same tick
+    await q.flush();
+    assert.deepEqual(q.calls, [], 'a queued playing decision does not force fullscreen after the page was left');
+    await q.elapse(1000);
+    assert.deepEqual(q.calls, []);
+  }
+  {
     // Go fullscreen from the browse page: stays until toggled back or a watch page is left.
     const p = page();
     await p.toggle();

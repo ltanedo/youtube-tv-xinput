@@ -85,16 +85,18 @@
     if (manualWindowed) return;
     // Decided only once the bridge answers, in order with any Shield click
     // queued ahead of this event: by then that click has set the flag, so a
-    // `playing` event racing a Go windowed click never undoes it.
-    change((is) => (manualWindowed ? is : true));
+    // `playing` event racing a Go windowed click never undoes it. The watch
+    // page is re-checked too, in case it was left while the bridge was busy.
+    change((is) => (manualWindowed || !watching() ? is : true));
   }, true);
 
   // Shield panel button: flip the native state. Going windowed mid-video is
   // remembered for this watch page; going fullscreen re-arms playback control.
   window.addEventListener("pake:fullscreen-toggle", () => {
+    const onWatchPage = watching(); // what the user saw when clicking, not what the page is once the bridge answers
     change((is) => {
       const on = !is;
-      manualWindowed = !on && watching();
+      manualWindowed = !on && onWatchPage;
       if (on) cancelExit();
       return on;
     });
