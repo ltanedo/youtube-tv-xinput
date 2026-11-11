@@ -5,8 +5,10 @@
 // runs in a normal window with the native title bar, so it can be moved between
 // monitors and resized like any other app. The window goes fullscreen, on the
 // monitor it is currently on, only once a video actually starts playing on the
-// watch page, and leaves fullscreen again when the watch page is left (Back,
-// end of a playlist, opening search from the player, ...).
+// watch page. When the watch page is left (Back, end of a playlist, opening
+// search from the player, ...) the window returns to whatever state the browse
+// UI had before the video: windowed by default, or fullscreen if the user had
+// put the browse UI fullscreen (Shield panel button or F11) beforehand.
 //
 // Fullscreen is the native window state (Tauri's setFullscreen; the Rust side
 // exposes window.__TAURI__ to the page), not the HTML Fullscreen API: the
@@ -47,6 +49,14 @@
   let manualWindowed = false;
   let watchGeneration = 0; // bumped each time the watch page is left
 
+  // The browse UI's own window state, restored when the watch page is left. It
+  // is read from the window each time a watch page is entered from a settled
+  // browse page (so a manual F11 there counts too) and set directly by the
+  // Shield button while browsing. Watch-to-watch transitions (autoplay next)
+  // happen while the exit timer is pending, with the window still fullscreen
+  // for playback, so they never overwrite it.
+  let browseFullscreen = false;
+
   // Changes are serialized, and the window state is re-read before each one,
   // so repeated `playing` events (every seek, buffer stall, play after pause)
   // don't flood the IPC bridge and a manual F11 toggle is respected rather
@@ -72,7 +82,7 @@
     if (exitTimer) return;
     exitTimer = setTimeout(() => {
       exitTimer = 0;
-      if (!watching()) setFullscreen(false);
+      if (!watching()) setFullscreen(browseFullscreen);
     }, EXIT_DELAY_MS);
   };
 
@@ -101,20 +111,34 @@
     change((is) => {
       const on = !is;
       manualWindowed = !on && generation === watchGeneration;
+      if (generation === -1 && !watching()) browseFullscreen = on;
       if (on) cancelExit();
       return on;
     });
   });
 
-  const onPageTypeChange = () => {
-    if (watching()) cancelExit();
-    else { manualWindowed = false; watchGeneration++; scheduleExit(); }
+  // The body class changes for many reasons (player state, overlays, ...); only
+  // a change of page type matters here. Unrelated changes while watching must
+  // not re-read the playback state as the browse state, and unrelated changes
+  // while browsing must not re-apply it over a manual F11.
+  let wasWatching = false;
+  const onWatchChange = (now) => {
+    wasWatching = now;
+    if (now) {
+      // Entering a watch page from a settled browse page: remember the browse
+      // state before playback changes it. A pending exit timer means the
+      // previous watch page was left moments ago, so the window still shows
+      // the playback state, not the browse state.
+      if (!exitTimer) change((is) => { browseFullscreen = is; return is; });
+      cancelExit();
+    } else { manualWindowed = false; watchGeneration++; scheduleExit(); }
   };
+  const onPageTypeChange = () => { const now = watching(); if (now !== wasWatching) onWatchChange(now); };
   const observeBody = () => {
     const body = document.body;
     if (!body || typeof MutationObserver === "undefined") return false;
     new MutationObserver(onPageTypeChange).observe(body, { attributes: true, attributeFilter: ["class"] });
-    onPageTypeChange();
+    onWatchChange(watching()); // startup: the browse UI settles windowed, as before
     return true;
   };
   if (!observeBody()) document.addEventListener("DOMContentLoaded", observeBody, { once: true });
