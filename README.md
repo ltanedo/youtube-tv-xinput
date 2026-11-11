@@ -13,8 +13,9 @@ bundling a browser.
 - **Windowed menu, fullscreen playback** — the app starts in a normal window
   with the native title bar, so it can be dragged onto any monitor and resized
   like any other app. The window goes fullscreen, on the monitor it is on, only
-  when a video actually starts playing, and returns to the window when you
-  leave the player (Back, search, end of a playlist). To move a playing video
+  when a video actually starts playing, and goes back to how the menu was when
+  you leave the player (Back, search, end of a playlist): windowed by default,
+  or fullscreen if you had put the menu fullscreen first. To move a playing video
   to another monitor, open the **Shield** panel (move the mouse, or
   Ctrl+Alt+B / Cmd+Option+B) and press **Go windowed**: the window stays
   windowed for that video while you drag it, then **Go fullscreen** (or the
@@ -190,10 +191,11 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
 - Windowed menu / fullscreen playback: `native/tv-fullscreen.js` watches the
   `WEB_PAGE_TYPE_WATCH` body class and the main video's `playing` event. A video
   starting on the watch page calls Tauri's native `setFullscreen(true)` through
-  `window.__TAURI__`; leaving the watch page calls `setFullscreen(false)` after a
-  400 ms grace period so watch-to-watch transitions (autoplay next) never flash
-  the window. The native state is re-read before each change, so F11 is never
-  fought. Home-screen previews play outside the watch page and are ignored.
+  `window.__TAURI__`; leaving the watch page restores the browse UI's own state
+  (read from the window when the watch page was entered, so a Shield-panel
+  **Go fullscreen** or F11 on the menu is kept) after a 400 ms grace period so
+  watch-to-watch transitions (autoplay next) never flash the window. The native
+  state is re-read before each change, so F11 is never fought. Home-screen previews play outside the watch page and are ignored.
   Pake's `--fullscreen` launch flag is no longer used, so the window keeps its
   native title bar and tauri-plugin-window-state restores its size and position.
 - Ultrawide fill: the leanback player sizes the `<video>` to the stream's aspect

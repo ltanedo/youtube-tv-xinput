@@ -1,7 +1,7 @@
 // Unit tests for native/tv-fullscreen.js: runs the initialization script in a
 // minimal fake page (no browser needed) with a scripted Tauri window bridge,
 // and drives the body-class mutations, media events, Shield-panel toggle
-// events and timers by hand.
+// events, manual F11 toggles and timers by hand.
 const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -241,15 +241,79 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     q.setWatch(true); await q.playing();
     assert.deepEqual(q.calls, [true, false, true], 'a later video goes fullscreen');
   }
+  // The browse UI's own state is restored when the watch page is left: a
+  // fullscreen home screen (Shield button or F11) stays fullscreen after a video,
+  // a windowed one stays windowed.
   {
-    // Go fullscreen from the browse page: stays until toggled back or a watch page is left.
     const p = page();
-    await p.toggle();
+    await p.toggle();                       // Go fullscreen on the home screen
     assert.deepEqual(p.calls, [true]);
     await p.elapse(1000);
     assert.deepEqual(p.calls, [true]);
+    p.setWatch(true); await p.playing();
+    assert.deepEqual(p.calls, [true], 'already fullscreen when the video starts');
+    p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true], 'leaving the watch page keeps the fullscreen home screen');
+    assert.equal(p.fullscreen, true);
+    await p.toggle();                       // Go windowed on the home screen
     p.setWatch(true); await p.playing(); p.setWatch(false); await p.elapse(1000);
-    assert.deepEqual(p.calls, [true, false], 'leaving a watch page returns to the window as usual');
+    assert.deepEqual(p.calls, [true, false, true, false], 'a windowed home screen is windowed again after a video');
+    assert.equal(p.timers.size, 0, 'no timers left behind');
+  }
+  {
+    // Fullscreen home screen via F11 (a change the script never sees).
+    const p = page();
+    await p.elapse(1000);                   // startup settled on the home screen
+    await p.f11();
+    p.setWatch(true); await p.playing();
+    assert.deepEqual(p.calls, []);
+    p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [], 'F11 fullscreen home screen is kept after the video');
+    assert.equal(p.fullscreen, true);
+    await p.f11();                          // back to windowed by hand, then another video
+    p.setWatch(true); await p.playing(); p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false], 'the state read at the next watch page wins');
+  }
+  {
+    // Fullscreen home screen, then the user goes windowed during the video (Shield
+    // button, or F11): Back restores the fullscreen home screen.
+    const p = page();
+    await p.toggle();
+    p.setWatch(true); await p.playing(); await p.toggle();
+    assert.deepEqual(p.calls, [true, false]);
+    p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false, true], 'Go windowed mid-video: the home screen is fullscreen again');
+    const q = page();
+    await q.toggle();
+    q.setWatch(true); await q.playing(); await q.f11();
+    q.setWatch(false); await q.elapse(1000);
+    assert.deepEqual(q.calls, [true, true], 'F11 mid-video: the home screen is fullscreen again');
+  }
+  {
+    // Autoplay-next never records the playback state as the home-screen state.
+    const p = page();
+    p.setWatch(true); await p.playing();
+    p.setWatch(false); p.setWatch(true); await p.playing();   // next video
+    p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false], 'windowed home screen after an autoplay chain');
+    const q = page();
+    q.setWatch(true); await q.playing();
+    q.setWatch(false); await q.elapse(300);                  // watch page left, exit still pending
+    q.setWatch(true); await q.playing();                     // next video (no autoplay flash this time)
+    q.setWatch(false); await q.elapse(1000);
+    assert.deepEqual(q.calls, [true, false], 'windowed home screen after a slow watch-to-watch transition');
+  }
+  {
+    // Go windowed on the home screen within the exit grace period: it is honored.
+    const p = page();
+    await p.toggle();                       // fullscreen home screen
+    p.setWatch(true); await p.playing(); p.setWatch(false);
+    await p.toggle();                       // Go windowed right after Back, before the timer
+    assert.deepEqual(p.calls, [true, false]);
+    await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false], 'the pending exit does not re-enter fullscreen');
+    p.setWatch(true); await p.playing(); p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false, true, false], 'and the home screen stays windowed from then on');
   }
   {
     // Go windowed on a watch page, then autoplay-next swaps the class briefly: the next video is fullscreen.
