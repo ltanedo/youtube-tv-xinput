@@ -52,7 +52,7 @@
     [X, "Space", false],      // play / pause
     [Y, "Slash", false],      // search
     [START, "Enter", false], [BACK, "Escape", false],
-    [LB, "Comma", false], [RB, "Period", false],
+    [LB, "Comma", true], [RB, "Period", true],   // frame step; hold: keeps stepping
     [LT, "F7", false], [RT, "F8", false],
     [L3, "Enter", false], [R3, "Escape", false],
   ];

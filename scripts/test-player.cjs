@@ -46,7 +46,6 @@ function fixture(host = 'macos') {
  const p = fixture();
  p.press(4); assert.equal(p.video.paused, true); assert.equal(p.seeks.length, 0);
  p.press(5); assert.equal(p.seeks.at(-1), 50 + 1/30); assert.equal(p.video.paused, true);
- p.hold(); assert.equal(p.seeks.length, 1);
  p.settled(); p.press(4); assert.equal(p.seeks.at(-1), 50); assert.equal(p.plays, 0);
  p.settled(); p.press(7); assert.equal(p.seeks.at(-1), 60); assert.equal(p.plays, 1); assert.equal(p.video.paused, false);
  p.hold(); assert.equal(p.plays, 1);
@@ -55,6 +54,16 @@ function fixture(host = 'macos') {
  p.press(4); p.press(5); assert.equal(p.seeks.at(-1), 60 + 1/30); assert.equal(p.video.paused, true);
  p.settled(); p.video.currentTime = 3; p.press(6); assert.equal(p.seeks.at(-1), 0);
  p.settled(); p.video.currentTime = 98; p.press(7); assert.equal(p.seeks.at(-1), 100);
+}
+{
+ // Holding a bumper keeps stepping one frame per repeat and stays paused; holding a trigger seeks once.
+ const p = fixture();
+ p.press(5); assert.equal(p.video.paused, true); assert.equal(p.seeks.length, 0);
+ p.press(5); assert.equal(p.seeks.length, 1);
+ p.hold(); assert.equal(p.seeks.length, 2); assert.ok(Math.abs(p.seeks.at(-1) - (50 + 2/30)) < 1e-9); assert.equal(p.video.paused, true);
+ p.hold(); assert.equal(p.seeks.length, 3); assert.equal(p.video.paused, true);
+ p.press(7); assert.equal(p.plays, 1);
+ p.hold(); assert.equal(p.plays, 1, 'holding a trigger does not repeat');
 }
 {
  const p = fixture(); p.video.seekable = {length:1, start:()=>200, end:()=>300}; p.video.currentTime=205;

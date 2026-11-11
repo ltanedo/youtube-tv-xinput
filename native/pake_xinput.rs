@@ -89,8 +89,8 @@ const MAPPINGS: [KeyMapping; 16] = [
     KeyMapping { flag: BTN_Y, vk: VK_OEM_2, repeat: false },      // slash: search
     KeyMapping { flag: START, vk: VK_RETURN, repeat: false },
     KeyMapping { flag: BACK, vk: VK_ESCAPE, repeat: false },
-    KeyMapping { flag: L_SHOULDER, vk: VK_OEM_COMMA, repeat: false }, // frame back
-    KeyMapping { flag: R_SHOULDER, vk: VK_OEM_PERIOD, repeat: false }, // frame forward
+    KeyMapping { flag: L_SHOULDER, vk: VK_OEM_COMMA, repeat: true },  // frame back (hold: keeps stepping)
+    KeyMapping { flag: R_SHOULDER, vk: VK_OEM_PERIOD, repeat: true }, // frame forward (hold: keeps stepping)
     KeyMapping { flag: L_TRIGGER, vk: VK_F7, repeat: false }, // seek back + play
     KeyMapping { flag: R_TRIGGER, vk: VK_F8, repeat: false }, // seek forward + play
     KeyMapping { flag: L_THUMB, vk: VK_RETURN, repeat: false },
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn transport_buttons_merge_once_and_do_not_repeat() {
+    fn bumpers_repeat_while_held_and_triggers_fire_once() {
         let mut native = XINPUT_STATE::default();
         native.Gamepad.bLeftTrigger = 128;
         native.Gamepad.bRightTrigger = 255;
@@ -428,7 +428,13 @@ mod tests {
         let now = Instant::now() + PRESS_COOLDOWN;
         let keys = controller.poll(&pad, now);
         assert_eq!(keys, vec![VK_OEM_COMMA, VK_OEM_PERIOD, VK_F7, VK_F8]);
-        assert!(controller.poll(&pad, now + Duration::from_secs(1)).is_empty());
+        // Held: the bumpers keep stepping after the repeat delay, at the repeat rate;
+        // the triggers fire once however long they are held.
+        assert!(controller.poll(&pad, now + Duration::from_millis(300)).is_empty());
+        assert_eq!(controller.poll(&pad, now + Duration::from_millis(360)), vec![VK_OEM_COMMA, VK_OEM_PERIOD]);
+        assert!(controller.poll(&pad, now + Duration::from_millis(400)).is_empty());
+        assert_eq!(controller.poll(&pad, now + Duration::from_millis(480)), vec![VK_OEM_COMMA, VK_OEM_PERIOD]);
+        assert_eq!(controller.poll(&pad, now + Duration::from_secs(1)), vec![VK_OEM_COMMA, VK_OEM_PERIOD]);
         controller.poll(&PadState::default(), now + Duration::from_secs(2));
         assert_eq!(controller.poll(&pad, now + Duration::from_secs(3)), keys);
         native.Gamepad.bLeftTrigger = 127;

@@ -95,6 +95,21 @@ function page(host) {
   assert.deepEqual(p.taps(), ['F7', 'F8', 'F7', 'F8']);
 }
 {
+  // Bumpers auto-repeat while held (frame stepping continues); triggers do not.
+  const p = page('macos');
+  p.set(p.pad([4, 6]));
+  p.tick();                               // t=16: press
+  assert.deepEqual(p.taps(), ['Comma', 'F7']);
+  for (let i = 0; i < 70; i++) p.tick();  // held ~1.1 s
+  const commas = p.taps().filter((c) => c === 'Comma').length;
+  assert.ok(commas >= 7 && commas <= 9, `bumper keeps stepping while held (${commas} taps)`);
+  assert.equal(p.taps().filter((c) => c === 'F7').length, 1, 'trigger fires once');
+  p.set(p.pad([])); p.tick();
+  const released = p.taps().length;
+  for (let i = 0; i < 30; i++) p.tick();
+  assert.equal(p.taps().length, released, 'nothing fires after release');
+}
+{
   // D-pad auto-repeat: 350 ms delay, then every ~110 ms.
   const p = page('macos');
   p.set(p.pad([12]));

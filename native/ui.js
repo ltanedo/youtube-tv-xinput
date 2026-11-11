@@ -47,6 +47,7 @@
     const row = add(section, 'div', '', { class: 'row' });
     add(row, 'button', 'Toggle blocking', { id: 'toggle' });
     add(row, 'button', 'Update filters', { id: 'update' });
+    add(row, 'button', 'Go fullscreen', { id: 'fullscreen', hidden: '' });
     add(row, 'button', 'Close', { id: 'close' });
     add(section, 'pre', '', { id: 'details' });
     add(section, 'p', '', { id: 'message', role: 'status' });
@@ -62,8 +63,23 @@
       if (!window.__TAURI__?.core?.invoke) return Promise.reject(new Error('App bridge not ready. Try again.'));
       return window.__TAURI__.core.invoke(...args);
     };
+    // Windowed / fullscreen (desktop): drag the window to another monitor while a
+    // video plays, then send it fullscreen there. tv-fullscreen.js owns the native
+    // state, flips it on pake:fullscreen-toggle and reports pake:fullscreen-state.
+    const fullscreen = root.getElementById('fullscreen');
+    const appWindow = () => { try { return window.__TAURI__?.window?.getCurrentWindow?.() || null; } catch (_) { return null; } };
+    const showFullscreen = (on) => { fullscreen.textContent = on ? 'Go windowed' : 'Go fullscreen'; };
+    const refreshFullscreen = async () => {
+      const w = appWindow();
+      fullscreen.hidden = !w;
+      if (!w) return;
+      try { showFullscreen(await w.isFullscreen()); } catch (_) {}
+    };
+    window.addEventListener('pake:fullscreen-state', (event) => showFullscreen(!!event.detail?.fullscreen));
+    fullscreen.onclick = () => { window.dispatchEvent(new CustomEvent('pake:fullscreen-toggle')); };
     let current;
     const refresh = async () => {
+      refreshFullscreen();
       try {
         current = await invoke('blocker_status');
         statusText.textContent = current.enabled ? 'Blocking is on' : 'Blocking is off';
