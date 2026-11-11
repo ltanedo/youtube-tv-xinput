@@ -117,8 +117,14 @@
     });
   });
 
-  const onPageTypeChange = () => {
-    if (watching()) {
+  // The body class changes for many reasons (player state, overlays, ...); only
+  // a change of page type matters here. Unrelated changes while watching must
+  // not re-read the playback state as the browse state, and unrelated changes
+  // while browsing must not re-apply it over a manual F11.
+  let wasWatching = false;
+  const onWatchChange = (now) => {
+    wasWatching = now;
+    if (now) {
       // Entering a watch page from a settled browse page: remember the browse
       // state before playback changes it. A pending exit timer means the
       // previous watch page was left moments ago, so the window still shows
@@ -127,11 +133,12 @@
       cancelExit();
     } else { manualWindowed = false; watchGeneration++; scheduleExit(); }
   };
+  const onPageTypeChange = () => { const now = watching(); if (now !== wasWatching) onWatchChange(now); };
   const observeBody = () => {
     const body = document.body;
     if (!body || typeof MutationObserver === "undefined") return false;
     new MutationObserver(onPageTypeChange).observe(body, { attributes: true, attributeFilter: ["class"] });
-    onPageTypeChange();
+    onWatchChange(watching()); // startup: the browse UI settles windowed, as before
     return true;
   };
   if (!observeBody()) document.addEventListener("DOMContentLoaded", observeBody, { once: true });

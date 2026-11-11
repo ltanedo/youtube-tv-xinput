@@ -58,6 +58,8 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     attachTauri() { window.__TAURI__ = { window: { getCurrentWindow: () => bridge } }; },
     domReady() { document.body = body; for (const fn of listeners.DOMContentLoaded || []) fn(); },
     setWatch(on) { if (on) classes.add('WEB_PAGE_TYPE_WATCH'); else classes.delete('WEB_PAGE_TYPE_WATCH'); observer?.(); },
+    // Some other body class changed (player state, overlays, browse-to-browse navigation).
+    touchClass() { observer?.(); },
     playing: async (main = true) => { for (const fn of listeners.playing || []) fn({ target: video(main) }); await flush(); },
     // The Shield panel's Go windowed / Go fullscreen button.
     toggle: async () => { window.dispatchEvent(new CustomEvent('pake:fullscreen-toggle')); await flush(); },
@@ -302,6 +304,27 @@ function page({ tauri = true, bodyAtStart = true } = {}) {
     q.setWatch(true); await q.playing();                     // next video (no autoplay flash this time)
     q.setWatch(false); await q.elapse(1000);
     assert.deepEqual(q.calls, [true, false], 'windowed home screen after a slow watch-to-watch transition');
+  }
+  {
+    // Unrelated body class changes never touch the cached browse state.
+    const p = page();
+    await p.elapse(1000);
+    p.setWatch(true); await p.playing();
+    p.touchClass(); await p.flush();        // player state class toggles while fullscreen
+    p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false], 'a class change while watching does not record playback as the home state');
+    await p.f11();                          // fullscreen home screen by hand
+    p.touchClass(); await p.elapse(1000);   // browse-to-browse navigation
+    assert.deepEqual(p.calls, [true, false], 'a class change while browsing does not undo F11');
+    assert.equal(p.fullscreen, true);
+    p.setWatch(true); await p.playing(); p.setWatch(false); await p.elapse(1000);
+    assert.deepEqual(p.calls, [true, false], 'and the fullscreen home screen is kept after the next video');
+    const q = page();                       // same, with a windowed home screen and the Shield button mid-video
+    await q.elapse(1000);
+    q.setWatch(true); await q.playing(); await q.toggle();
+    q.touchClass(); await q.flush();
+    q.setWatch(false); await q.elapse(1000);
+    assert.deepEqual(q.calls, [true, false], 'windowed home screen stays windowed');
   }
   {
     // Go windowed on the home screen within the exit grace period: it is honored.
