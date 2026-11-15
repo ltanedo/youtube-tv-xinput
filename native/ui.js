@@ -1,4 +1,4 @@
-// Native document-start script (WebView2 / WKWebView); remains usable when filtering is off.
+// Native document-start script (WebView2 / WKWebView / WebKitGTK); remains usable when filtering is off.
 (() => {
   if (window.__pakeBlockerUi) return;
   window.__pakeBlockerUi = true;
@@ -84,7 +84,8 @@
         current = await invoke('blocker_status');
         statusText.textContent = current.enabled ? 'Blocking is on' : 'Blocking is off';
         toggle.textContent = current.enabled ? 'Turn off & reload' : 'Turn on & reload';
-        const webKit = current.runtime.includes('WKWebView');
+        // WKWebView (macOS) and WebKitGTK (Linux) content rules expose no per-request counters.
+        const webKit = /WKWebView|WebKitGTK/.test(current.runtime);
         details.textContent = [
           webKit ? 'Native match counters: not exposed by WebKit' : 'Blocked requests: ' + current.blocked,
           webKit ? null : 'Resource replacements: ' + current.redirected,
