@@ -1,6 +1,6 @@
-// Runs as an initialization script (top frame only) on Windows and macOS.
-// Reads the controller through the page's Gamepad API every 16 ms and turns it
-// into keyboard input for the leanback UI, which is fully keyboard-driven.
+// Runs as an initialization script (top frame only) on Windows, macOS and
+// Linux. Reads the controller every 16 ms and turns it into keyboard input for
+// the leanback UI, which is fully keyboard-driven.
 //
 // - Windows: the state is forwarded to the native bridge (pake_xinput.rs),
 //   which merges it with XInput and synthesizes real key presses for the window.
@@ -15,14 +15,19 @@
 //   (`MAPPINGS`, debounce and auto-repeat) is applied here and dispatched as
 //   KeyboardEvents straight into the page. No OS-level input is injected and
 //   no accessibility permission is needed.
+// - Linux: same in-page key synthesis as macOS, but the state comes from the
+//   native bridge (pake_gamepad.rs, gilrs over evdev) as a `pake:gamepad`
+//   Tauri event: Debian/Ubuntu build WebKitGTK without the Gamepad API. If the
+//   WebKit in use does expose it, both sources are merged so a pad seen by
+//   both never fires twice.
 //
-// prepare.cjs injects `window.__pakeHost` ("windows" | "macos") just before
-// this script.
+// prepare.cjs injects `window.__pakeHost` ("windows" | "macos" | "linux") just
+// before this script.
 (() => {
   if (window !== window.top || window.__pakeGamepadBridge) return;
   window.__pakeGamepadBridge = true;
 
-  const IN_PAGE_KEYS = window.__pakeHost === "macos";
+  const IN_PAGE_KEYS = ["macos", "linux"].includes(window.__pakeHost);
 
   // Standard-mapping button indices (bit n = buttons[n].pressed).
   const A = 0, B = 1, X = 2, Y = 3, LB = 4, RB = 5, LT = 6, RT = 7, BACK = 8, START = 9,
@@ -128,12 +133,31 @@
     }
   };
 
+  // --- Native source (Linux) ---
+  // pake_gamepad.rs sends the merged state of all pads in this same bit layout
+  // (left stick +y up), on every change plus a 100 ms heartbeat while held.
+  // State older than 300 ms is dropped so a stalled bridge never leaves a key held.
+  const NATIVE_FRESH = 300;
+  let native = null; // { buttons, x, y, at }
+  if (window.__pakeHost === "linux") {
+    const listen = window.__TAURI__?.event?.listen;
+    if (listen) {
+      listen("pake:gamepad", ({ payload }) => {
+        if (!payload) return;
+        native = { buttons: payload.buttons >>> 0, x: +payload.x || 0, y: +payload.y || 0, at: performance.now() };
+      }).catch(() => {});
+    }
+  }
+
   const poll = () => {
-    if (!navigator.getGamepads) return;
+    const now = performance.now();
     let buttons = 0;
     let x = 0;
     let y = 0;
-    for (const pad of navigator.getGamepads()) {
+    // Native state first, then whatever the Gamepad API can see. A pad visible
+    // to both is merged (buttons ORed, strongest stick wins) so it never fires twice.
+    if (native && now - native.at < NATIVE_FRESH) ({ buttons, x, y } = native);
+    for (const pad of navigator.getGamepads?.() ?? []) {
       if (!pad || !pad.connected || pad.mapping !== "standard") continue;
       pad.buttons.forEach((button, index) => {
         if (button.pressed && index < 32) buttons |= 1 << index;
@@ -143,7 +167,6 @@
       if (Math.abs(ay) > Math.abs(y)) y = -ay; // Gamepad API is +down; the mapping uses +up
     }
     buttons >>>= 0;
-    const now = performance.now();
     if (IN_PAGE_KEYS) synthesize(buttons, x, y, now);
     else forward(buttons, x, y, now);
   };
