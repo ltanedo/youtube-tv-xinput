@@ -93,12 +93,14 @@ jobs:
           NO_STRIP: true
       - name: Test native blocker rules and controller mapping
         run: cargo test --release --features cli-build --manifest-path node_modules/pake-cli/src-tauri/Cargo.toml --lib -- pake_adblock::tests pake_gamepad::tests
+      # Pake lowercases the app name in its Linux output (youtubetv.deb, youtubetv.AppImage,
+      # youtubetv-<pkgver>-1-x86_64.pkg.tar.zst).
       - name: Name the packages after the release version and architecture
         run: |
           version=$(node -p "require('./package.json').version")
-          mv YouTubeTV.deb "YouTubeTV-${version}-Linux-x64.deb"
-          mv YouTubeTV.AppImage "YouTubeTV-${version}-Linux-x64.AppImage"
-          mv YouTubeTV-*-x86_64.pkg.tar.zst "YouTubeTV-${version}-Linux-x64.pkg.tar.zst"
+          mv youtubetv.deb "YouTubeTV-${version}-Linux-x64.deb"
+          mv youtubetv.AppImage "YouTubeTV-${version}-Linux-x64.AppImage"
+          mv youtubetv-*-x86_64.pkg.tar.zst "YouTubeTV-${version}-Linux-x64.pkg.tar.zst"
           chmod +x "YouTubeTV-${version}-Linux-x64.AppImage"
           ls -l YouTubeTV-*
       - uses: actions/upload-artifact@v4
