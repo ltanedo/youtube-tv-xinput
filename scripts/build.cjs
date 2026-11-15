@@ -18,35 +18,20 @@ const icon = { darwin: 'assets/youtubetv.icns', win32: 'assets/youtubetv.ico', l
 const version = require('../package.json').version;
 const appVersion = process.platform === 'win32' ? version.replace(/-beta\.(\d+)$/, '-$1') : version;
 
-function pake(appVersion, extra) {
-  execFileSync(process.execPath, [
-    'node_modules/pake-cli/dist/cli.js',
-    'https://www.youtube.com/tv',
-    '--name', 'YouTubeTV',
-    '--identifier', 'com.ltanedo.youtubetv',
-    '--icon', icon,
-    '--user-agent', CONSOLE_USER_AGENT,
-    '--inject', 'inject/yttv.css',
-    '--width', '1280', '--height', '720',
-    '--dark-mode',
-    '--app-version', appVersion,
-    '--keep-binary',
-    ...extra,
-  ], { stdio: 'inherit' });
-}
-
-const extra = process.argv.slice(2);
-const targetsAt = extra.indexOf('--targets');
-if (process.platform === 'linux' && targetsAt !== -1 && (extra[targetsAt + 1] || '').split(',').includes('zst')) {
-  // Arch packages: pacman forbids hyphens in pkgver, so beta.N becomes betaN
-  // (`2.2.0beta5` still sorts before `2.2.0`). Pake builds the zst from a
-  // temporary YouTubeTV.deb that it deletes afterwards, so it must run before
-  // the regular targets, whose .deb keeps the real version.
-  const targets = extra[targetsAt + 1].split(',').map((t) => t.trim()).filter(Boolean);
-  const rest = [...extra.slice(0, targetsAt), ...extra.slice(targetsAt + 2)];
-  pake(version.replace(/-beta\.(\d+)$/, 'beta$1'), [...rest, '--targets', 'zst']);
-  const regular = targets.filter((t) => t !== 'zst');
-  if (regular.length) pake(appVersion, [...rest, '--targets', regular.join(',')]);
-} else {
-  pake(appVersion, extra);
-}
+const args = [
+  'node_modules/pake-cli/dist/cli.js',
+  'https://www.youtube.com/tv',
+  '--name', 'YouTubeTV',
+  '--identifier', 'com.ltanedo.youtubetv',
+  '--icon', icon,
+  '--user-agent', CONSOLE_USER_AGENT,
+  '--inject', 'inject/yttv.css',
+  '--width', '1280', '--height', '720',
+  '--dark-mode',
+  '--app-version', appVersion,
+  '--keep-binary',
+  // On Linux, `--targets deb,appimage,zst` picks the package formats; the Arch
+  // package (zst) is repacked from the .deb (prepare.cjs patches its pkgver).
+  ...process.argv.slice(2),
+];
+execFileSync(process.execPath, args, { stdio: 'inherit' });

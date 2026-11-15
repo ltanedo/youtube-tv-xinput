@@ -182,9 +182,9 @@ Pake's runtime, and produces `YouTubeTV.exe` (portable) and `YouTubeTV.msi` on
 Windows, `YouTubeTV.dmg` (plus the raw `YouTubeTV-binary`) on macOS, or
 `YouTubeTV.deb` and `YouTubeTV.AppImage` on Linux. Pass
 `--targets app` on macOS to get `YouTubeTV.app` instead of the DMG; on Linux
-pass `--targets zst,deb,appimage` (any subset) to pick the package formats,
-where `zst` is the Arch package (`YouTubeTV-<version>-1-x86_64.pkg.tar.zst`,
-needs `ar` and `bsdtar`). On Windows,
+pass `--targets deb,appimage,zst` (any subset) to pick the package formats,
+where `zst` is the Arch package (`YouTubeTV-2.2.0beta5-1-x86_64.pkg.tar.zst`,
+repacked from the .deb; needs `ar` and `bsdtar`). On Windows,
 set `CARGO_TARGET_DIR` to `.build-target` before `npm test` to keep the test
 build out of the Pake runtime.
 

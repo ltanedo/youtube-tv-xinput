@@ -166,10 +166,10 @@ npm test
 On Windows, set `CARGO_TARGET_DIR` to `.build-target` before `npm test`. The
 build produces `YouTubeTV.exe`/`YouTubeTV.msi` on Windows, an Apple-silicon
 `YouTubeTV.dmg` on macOS, or `YouTubeTV.deb` / `YouTubeTV.AppImage` /
-`YouTubeTV-<version>-1-x86_64.pkg.tar.zst` on Linux (`--targets zst,deb,appimage`;
-`scripts/build.cjs` builds the Arch package first with a hyphen-free version,
-`2.2.0beta5`, because pacman rejects hyphens in `pkgver`, and the AppImage
-bundles GStreamer via Tauri's `bundleMediaFramework`). Local macOS builds are
+`YouTubeTV-<version>-1-x86_64.pkg.tar.zst` on Linux (`--targets deb,appimage,zst`;
+`prepare.cjs` patches Pake's Arch packager to write a hyphen-free `pkgver`,
+`2.2.0beta5`, because pacman rejects hyphens there while Tauri requires semver,
+and the AppImage bundles GStreamer via Tauri's `bundleMediaFramework`). Local macOS builds are
 ad-hoc signed; public distribution still requires a Developer ID signature and
 Apple notarization.
 

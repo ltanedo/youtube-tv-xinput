@@ -87,9 +87,8 @@ jobs:
             native/core
             node_modules/pake-cli/src-tauri
       - run: npm test
-      # zst first: Pake builds it from a temporary YouTubeTV.deb (see scripts/build.cjs).
       # NO_STRIP: linuxdeploy's bundled strip cannot read binaries built on glibc 2.38+.
-      - run: npm run build -- --targets zst,deb,appimage
+      - run: npm run build -- --targets deb,appimage,zst
         env:
           NO_STRIP: true
       - name: Test native blocker rules and controller mapping

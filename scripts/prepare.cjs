@@ -166,10 +166,15 @@ markerBlock('webview2-com = "0.38"\n', `windows = { version = "=0.61.3", feature
   }
 }
 
-// --- Pake CLI: Arch package (zst) metadata names this app, not the Pake template ---
+// --- Pake CLI: Arch package (zst) ---
+// pacman rejects hyphens in pkgver, while Tauri insists on a semver version, so the
+// Arch packager alone turns `2.2.0-beta.5` into `2.2.0beta5` (which still sorts
+// before `2.2.0`). Its metadata also names this app instead of the Pake template.
 {
   const cli = path.join(pake, 'dist/cli.js');
   const edits = [
+    ["        const version = tauriConfig.version;\n        const arch = this.buildArch === 'arm64' ? 'aarch64' : 'x86_64';\n",
+     "        const version = tauriConfig.version.replace(/-([a-z]+)\\.?(\\d*)/gi, '$1$2'); // youtube-tv-xinput: pacman forbids hyphens in pkgver\n        const arch = this.buildArch === 'arm64' ? 'aarch64' : 'x86_64';\n"],
     ['pkgdesc = ${name} Pake app\n', 'pkgdesc = YouTube TV (leanback) client with game controller support and ad blocking\n'],
     ['url = https://github.com/tw93/Pake\n', 'url = https://github.com/ltanedo/youtube-tv-xinput\n'],
   ];
