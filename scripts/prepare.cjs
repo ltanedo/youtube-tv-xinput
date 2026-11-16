@@ -104,7 +104,8 @@ replace('src/app/window.rs',
   '"--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,UserAgentClientHint --disable-blink-features=AutomationControlled --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-background-media-suspend"');
 
 // --- TV scripts, run before any page script (in this order) ---
-// navigator.js       spoof navigator.* to match the console user agent
+// __pakeHost         "windows" | "macos" | "linux": platform switch for the scripts below
+// navigator.js       spoof navigator.* to match the console user agent (Linux variant)
 // background-play.js keep the page "visible" so the player never pauses on alt-tab/minimize
 // gamepad.js         read the pad through the page's Gamepad API; on Windows forward it to
 //                    pake_xinput (the WebView2 process sees the pad when the app process does
@@ -114,9 +115,9 @@ replace('src/app/window.rs',
 // fullscreen.js      windowed browse UI; native fullscreen only while a video plays on the watch page
 replace('src/app/window.rs', '        .initialization_script(include_str!("../inject/auth.js"))',
   `        .initialization_script(include_str!("../inject/auth.js"))
+        .initialization_script(if cfg!(target_os = "macos") { "window.__pakeHost = 'macos';" } else if cfg!(target_os = "linux") { "window.__pakeHost = 'linux';" } else { "window.__pakeHost = 'windows';" })
         .initialization_script(include_str!("../../pake-tv/navigator.js"))
         .initialization_script(include_str!("../../pake-tv/background-play.js"))
-        .initialization_script(if cfg!(target_os = "macos") { "window.__pakeHost = 'macos';" } else if cfg!(target_os = "linux") { "window.__pakeHost = 'linux';" } else { "window.__pakeHost = 'windows';" })
         .initialization_script(include_str!("../../pake-tv/gamepad.js"))
         .initialization_script(include_str!("../../pake-tv/player.js"))
         .initialization_script(include_str!("../../pake-tv/fullscreen.js"))`);

@@ -212,6 +212,11 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
                                                     └─ pake-tv/fullscreen.js windowed menu; native fullscreen only while a video plays
 ```
 
+- The console user agent is the PS4 leanback shell's. WebKitGTK rejects that
+  exact string (its empty `PS4/` product version fails the RFC 7231 User-Agent
+  grammar check and WebKit silently keeps its default UA, which YouTube bounces
+  to youtube.com), so on Linux the header and `navigator.userAgent` say
+  `Sony PS4/1.0`; YouTube serves the TV app to both.
 - The window starts on `about:blank`, registers the platform's request
   filtering (WebView2 `WebResourceRequested` interception on Windows, a
   compiled `WKContentRuleList` on macOS, the same rule list compiled through
