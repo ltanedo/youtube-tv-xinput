@@ -146,10 +146,23 @@ jobs:
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             existing=$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')
             missing=()
-            for file in YouTubeTV-* SHA256SUMS.txt; do
+            for file in YouTubeTV-*; do
               grep -qxF "$file" <<<"$existing" && echo "keeping existing $file" || missing+=("$file")
             done
-            [ ${#missing[@]} -eq 0 ] || gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" "${missing[@]}"
+            if [ ${#missing[@]} -gt 0 ]; then
+              gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" "${missing[@]}"
+              # Extend the release's checksum list with the added packages (keep the
+              # entries for the assets that were already there).
+              if grep -qxF SHA256SUMS.txt <<<"$existing"; then
+                gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --pattern SHA256SUMS.txt --output existing-sums.txt
+                for file in "${missing[@]}"; do grep -v -F -- " $file" existing-sums.txt > existing-sums.tmp || true; mv existing-sums.tmp existing-sums.txt; done
+                { cat existing-sums.txt; sha256sum "${missing[@]}"; } > SHA256SUMS.txt
+              else
+                sha256sum "${missing[@]}" > SHA256SUMS.txt
+              fi
+              cat SHA256SUMS.txt
+              gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber SHA256SUMS.txt
+            fi
           else
             gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" "${args[@]}" YouTubeTV-* SHA256SUMS.txt
           fi
