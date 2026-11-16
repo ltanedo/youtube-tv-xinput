@@ -7,10 +7,12 @@ const assert = require('node:assert/strict');
 
 const source = fs.readFileSync(path.join(__dirname, '../native/tv-gamepad.js'), 'utf8');
 
-function page(host) {
+// gamepadApi: whether navigator.getGamepads exists (Debian/Ubuntu WebKitGTK has none).
+function page(host, gamepadApi = host !== 'linux') {
   const events = [];   // KeyboardEvents dispatched into the page
   const custom = [];   // pake:* events dispatched on window
   const invoked = [];  // native bridge calls (Windows)
+  let nativeListener = null; // pake:gamepad Tauri event listener (Linux)
   const pads = [];
   let now = 0;
   let poll;
@@ -29,9 +31,12 @@ function page(host) {
   if (host === 'windows') {
     window.__TAURI__ = { core: { invoke: (command, args) => { invoked.push({ command, ...args }); return Promise.resolve(); } } };
   }
+  if (host === 'linux') {
+    window.__TAURI__ = { event: { listen: (name, callback) => { if (name === 'pake:gamepad') nativeListener = callback; return Promise.resolve(() => {}); } } };
+  }
   const context = vm.createContext({
     window, Event, KeyboardEvent,
-    navigator: { getGamepads: () => pads },
+    navigator: gamepadApi ? { getGamepads: () => pads } : {},
     document,
     performance: { now: () => now },
     setInterval: (fn) => { poll = fn; return 1; },
@@ -49,6 +54,10 @@ function page(host) {
     // Advance time and poll once (16 ms, like the real interval).
     tick: (ms = 16) => { now += ms; poll(); },
     taps: () => events.filter((e) => e.type === 'keydown').map((e) => e.code),
+    // State from the native bridge (Linux): standard-mapping bits, left stick with +y up.
+    native: (buttons, x = 0, y = 0) => nativeListener({ payload: { buttons, x, y } }),
+    nativeEvent: (event) => nativeListener(event),
+    hasNativeListener: () => nativeListener !== null,
   };
 }
 
@@ -196,6 +205,62 @@ function page(host) {
   assert.deepEqual(p.invoked.at(-1), { command: 'page_gamepad', buttons: 0, x: 0, y: 0 });
   for (let i = 0; i < 20; i++) p.tick();
   assert.equal(p.invoked.length, 5, 'no heartbeat while idle');
+}
+
+// --- Linux: state arrives from the native bridge as a Tauri event; keys are synthesized in the page ---
+{
+  const p = page('linux');
+  assert.ok(p.hasNativeListener(), 'listens for pake:gamepad');
+  p.tick();                               // no Gamepad API and nothing received: nothing fires, no crash
+  assert.deepEqual(p.taps(), []);
+  p.native(1 << 0);                       // A
+  p.tick();
+  assert.deepEqual(p.events.map((e) => [e.type, e.code, e.keyCode]), [['keydown', 'Enter', 13], ['keyup', 'Enter', 13]]);
+  assert.equal(p.invoked.length, 0, 'no page_gamepad calls on Linux');
+  // Held: the bridge re-sends every ~100 ms; a non-repeating button still fires once.
+  for (let i = 0; i < 60; i++) { if (i % 6 === 5) p.native(1 << 0); p.tick(); }
+  assert.deepEqual(p.taps(), ['Enter']);
+  p.native(0); p.tick();
+  p.native(1 << 0); p.tick(100);          // released and pressed again
+  assert.deepEqual(p.taps(), ['Enter', 'Enter']);
+}
+{
+  // D-pad auto-repeat runs off the heartbeat; without it the state goes stale after 300 ms.
+  const p = page('linux');
+  p.native(1 << 12);
+  for (let i = 0; i < 70; i++) { if (i % 6 === 5) p.native(1 << 12); p.tick(); }  // ~1.1 s
+  const held = p.taps().length;
+  assert.ok(held >= 7 && held <= 9, `repeats while the bridge keeps re-sending (${held} taps)`);
+  assert.ok(p.taps().every((c) => c === 'ArrowUp'));
+  for (let i = 0; i < 40; i++) p.tick();  // bridge silent: fresh for 300 ms more, then dropped
+  const stale = p.taps().length;
+  assert.ok(stale - held <= 3, `stops once the state is stale (${stale - held} extra taps)`);
+  for (let i = 0; i < 30; i++) p.tick();
+  assert.equal(p.taps().length, stale, 'nothing fires while stale');
+  // Left stick: native sends +y up, no inversion.
+  p.native(0, 0.9, 0); p.tick();
+  p.native(0, 0, 0.9); p.tick(100);
+  p.native(0, 0, -0.9); p.tick(100);
+  p.native(0, 0.2, 0.2); p.tick(100);     // dead zone
+  assert.deepEqual(p.taps().slice(stale), ['ArrowRight', 'ArrowUp', 'ArrowDown']);
+}
+{
+  // A WebKit built with the Gamepad API sees the same pad: both sources merge, nothing fires twice.
+  const p = page('linux', true);
+  p.set(p.pad([0], [0.2, 0]));
+  p.native((1 << 0) | (1 << 12), 0.8, 0);
+  p.tick();
+  assert.deepEqual(p.taps(), ['ArrowUp', 'Enter', 'ArrowRight']);
+}
+{
+  // Malformed or missing payloads are ignored.
+  const p = page('linux');
+  p.nativeEvent({}); p.tick();
+  p.nativeEvent({ payload: null }); p.tick();
+  p.nativeEvent({ payload: { buttons: 'x', x: 'y', y: NaN } }); p.tick();
+  assert.deepEqual(p.taps(), []);
+  p.native(1 << 1); p.tick();
+  assert.deepEqual(p.taps(), ['Escape']);
 }
 
 console.log('tv-gamepad.js: all tests passed');

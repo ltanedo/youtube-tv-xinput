@@ -251,7 +251,7 @@
   // never swallow typing on the search page. Shift is allowed: < and > are
   // Shift+Comma / Shift+Period.
   const KEYS = { KeyD: toggleAspect, KeyC: toggleCaptions, Comma: stepBack, Period: stepForward };
-  if (["windows", "macos"].includes(window.__pakeHost)) {
+  if (["windows", "macos", "linux"].includes(window.__pakeHost)) {
     KEYS.F7 = () => seekAndPlay(-1);
     KEYS.F8 = () => seekAndPlay(1);
   }

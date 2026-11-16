@@ -1,10 +1,10 @@
 # YouTube TV (Pake) — with Xbox controller support and ad blocking
 
 A lightweight desktop client for the **YouTube TV / leanback interface**
-(`youtube.com/tv`, the same UI as Android TV and consoles) for **Windows and
-macOS**, built with **Rust**, **Tauri**, and **Pake**. It uses the operating
-system's web runtime — WebView2 on Windows, WKWebView on macOS — rather than
-bundling a browser.
+(`youtube.com/tv`, the same UI as Android TV and consoles) for **Windows,
+macOS and Linux**, built with **Rust**, **Tauri**, and **Pake**. It uses the
+operating system's web runtime — WebView2 on Windows, WKWebView on macOS,
+WebKitGTK on Linux — rather than bundling a browser.
 
 ## Features
 
@@ -20,7 +20,7 @@ bundling a browser.
   Ctrl+Alt+B / Cmd+Option+B) and press **Go windowed**: the window stays
   windowed for that video while you drag it, then **Go fullscreen** (or the
   next video) makes it fullscreen on the monitor it is now on. **F11**
-  (Windows) or **Ctrl+Cmd+F** (macOS) also toggle by hand; after those, the
+  (Windows, Linux) or **Ctrl+Cmd+F** (macOS) also toggle by hand; after those, the
   next video that starts playing goes fullscreen again. Window size and position
   are remembered across restarts.
 - **Xbox / game controllers** — on Windows any XInput-compatible controller
@@ -29,14 +29,17 @@ bundling a browser.
   this window is in the foreground. On macOS any controller the system
   recognizes (Xbox, PlayStation, MFi — over Bluetooth or USB) is read through
   the page's Gamepad API and turned into the same key presses inside the page;
-  no accessibility permission is needed.
+  no accessibility permission is needed. On Linux any pad the kernel exposes
+  (Xbox via `xpad`/`xpadneo`, PlayStation, 8BitDo, …) is read natively through
+  evdev and turned into the same key presses inside the page.
 - **Integrated ad blocker** — the native `adblock-rust` blocker from
   [youtube-desktop-lite](https://github.com/ltanedo/youtube-desktop-lite):
   EasyList + uBlock Origin filters, uBO scriptlets that strip `playerAds` /
   `adPlacements` / `adSlots` from late `youtubei/v1/player|next|get_watch`
   responses, and cosmetic rules. Windows adds WebView2 request interception;
-  macOS adds a WKContentRuleList for known ad endpoints. Enabled by default.
-  Press **Ctrl+Alt+B** (Windows) or **Cmd+Option+B** (macOS), or move the
+  macOS and Linux add a WebKit content rule list for known ad endpoints.
+  Enabled by default.
+  Press **Ctrl+Alt+B** (Windows, Linux) or **Cmd+Option+B** (macOS), or move the
   mouse and click **Shield**, for the toggle, diagnostics and filter updates.
   The same panel has a **Go windowed / Go fullscreen** button.
   See [native/README.md](native/README.md) for coverage, limitations and
@@ -87,7 +90,51 @@ to desktop; Android remote controls are unchanged.
 
 The mapping lives in [`native/pake_xinput.rs`](native/pake_xinput.rs)
 (`MAPPINGS`, Windows) and [`native/tv-gamepad.js`](native/tv-gamepad.js)
-(macOS); the two are kept identical, including debounce and auto-repeat timing.
+(macOS and Linux); the two are kept identical, including debounce and
+auto-repeat timing. On Linux the pad state itself comes from
+[`native/pake_gamepad_linux.rs`](native/pake_gamepad_linux.rs).
+
+## Install (Windows)
+
+Download `YouTubeTV-<version>-Windows-x64.msi` (or `-arm64.msi`) from the
+releases page, or the matching `-portable.exe` to run without installing.
+
+## Install (Linux)
+
+Releases carry three x64 packages built from the same sources:
+
+| Package | For | Install |
+|---------|-----|---------|
+| `YouTubeTV-<version>-Linux-x64.deb` | Ubuntu 24.04+, Debian 13+, Mint, Pop!_OS | `sudo apt install ./YouTubeTV-<version>-Linux-x64.deb` |
+| `YouTubeTV-<version>-Linux-x64.pkg.tar.zst` | Arch Linux and derivatives (Omarchy, CachyOS, EndeavourOS, Manjaro) | `sudo pacman -U YouTubeTV-<version>-Linux-x64.pkg.tar.zst` |
+| `YouTubeTV-<version>-Linux-x64.AppImage` | Anything else (Fedora, openSUSE, …) | `chmod +x YouTubeTV-*.AppImage && ./YouTubeTV-*.AppImage` |
+
+The `.deb` and the Arch package use the distribution's own WebKitGTK 4.1 and
+GStreamer (pulled in as dependencies; on Arch install `gst-plugins-good`,
+`gst-plugins-bad` and `gst-libav` for H.264/AAC playback if they are not
+already there). The AppImage bundles WebKitGTK and the GStreamer plugins, so
+it runs on any distribution with glibc 2.39 or newer and FUSE 2 (`libfuse2t64`
+on Ubuntu, `fuse2` on Arch); without FUSE run it with
+`--appimage-extract-and-run`. All three install a **YouTubeTV** desktop entry.
+
+Linux notes:
+
+- **Controllers** need no setup: the app reads `/dev/input` event devices
+  (every desktop session grants access to the seated user). Xbox pads over USB
+  use the kernel's `xpad` driver; over Bluetooth the
+  [`xpadneo`](https://github.com/atar-axis/xpadneo) driver gives the best
+  mapping. The page cannot see pads itself because Debian and Ubuntu build
+  WebKitGTK without the Gamepad API, so the native reader is always used; on a
+  WebKit that does expose the API (Arch) both sources are merged.
+- **Wayland and NVIDIA**: Pake starts WebKitGTK in its "safe mode"
+  (`WEBKIT_DISABLE_DMABUF_RENDERER=1` and `WEBKIT_DISABLE_COMPOSITING_MODE=1`)
+  on every desktop except niri, which avoids blank or flickering windows on
+  NVIDIA but renders video without GPU compositing. If playback is choppy on a
+  machine where WebKitGTK apps (GNOME Web, Pake apps) otherwise work, launch
+  with `PAKE_LINUX_WEBKIT_SAFE_MODE=0` to get the accelerated path back.
+- **Hyprland / Omarchy**: the app is a normal GTK3 window; fullscreen playback
+  uses the compositor's fullscreen state, so your window rules for
+  `com.ltanedo.youtubetv` (or the `YouTubeTV` class) apply.
 
 ## Install (macOS)
 
@@ -112,6 +159,13 @@ plug it in) and press any button once the app is open.
      and the WebView2 Runtime (preinstalled on Windows 10/11)
    - **macOS:** Xcode Command Line Tools (`xcode-select --install`); builds an
      Apple-silicon app on Apple-silicon hosts
+   - **Linux (Debian/Ubuntu):** `sudo apt install libwebkit2gtk-4.1-dev
+     libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev
+     libudev-dev build-essential curl wget file`, plus `libarchive-tools` for the
+     Arch package and the `gstreamer1.0-plugins-{base,good,bad}` /
+     `gstreamer1.0-libav` plugins the AppImage bundles. On Arch:
+     `webkit2gtk-4.1 libayatana-appindicator librsvg patchelf openssl xdotool
+     base-devel libarchive`.
 
 ## Build
 
@@ -125,8 +179,13 @@ npm test
 patches ([`scripts/prepare.cjs`](scripts/prepare.cjs), anchor-checked and
 idempotent), copies the blocker core, controller bridge and navigator spoof into
 Pake's runtime, and produces `YouTubeTV.exe` (portable) and `YouTubeTV.msi` on
-Windows, or `YouTubeTV.dmg` (plus the raw `YouTubeTV-binary`) on macOS. Pass
-`--targets app` on macOS to get `YouTubeTV.app` instead of the DMG. On Windows,
+Windows, `YouTubeTV.dmg` (plus the raw `YouTubeTV-binary`) on macOS, or
+`youtubetv.deb` and `youtubetv.AppImage` on Linux (Pake lowercases the Linux
+names). Pass
+`--targets app` on macOS to get `YouTubeTV.app` instead of the DMG; on Linux
+pass `--targets deb,appimage,zst` (any subset) to pick the package formats,
+where `zst` is the Arch package (`youtubetv-2.2.0beta5-1-x86_64.pkg.tar.zst`,
+repacked from the .deb; needs `ar` and `bsdtar`). On Windows,
 set `CARGO_TARGET_DIR` to `.build-target` before `npm test` to keep the test
 build out of the Pake runtime.
 
@@ -141,19 +200,27 @@ neither the ad blocker nor the controller bridge.
 scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-cli/src-tauri (patched)
                                                     ├─ src/pake_adblock.rs   Windows: WebView2 request filter + scriptlets
                                                     │                        macOS: WKContentRuleList + scriptlets (native/pake_adblock_macos.rs)
+                                                    │                        Linux: WebKitUserContentFilterStore + scriptlets (native/pake_adblock_linux.rs)
                                                     ├─ src/pake_xinput.rs    Windows only: XInput poll → SendInput to this window
+                                                    ├─ src/pake_gamepad.rs   Linux only: gilrs/evdev poll → pake:gamepad event to the page (native/pake_gamepad_linux.rs)
                                                     ├─ pake-adblock/core     adblock-rust engine + bundled lists
                                                     ├─ pake-adblock/ui.js    Shield panel (Ctrl+Alt+B / Cmd+Option+B)
                                                     ├─ pake-tv/navigator.js  navigator.userAgent/platform spoof
                                                     ├─ pake-tv/background-play.js  visibility spoof for background playback
-                                                    ├─ pake-tv/gamepad.js    Gamepad API poll → page_gamepad (Windows) or key events (macOS)
+                                                    ├─ pake-tv/gamepad.js    Gamepad API poll → page_gamepad (Windows) or key events (macOS, Linux)
                                                     ├─ pake-tv/player.js     D / C / < > shortcuts: ultrawide fill, subtitles, frame step
                                                     └─ pake-tv/fullscreen.js windowed menu; native fullscreen only while a video plays
 ```
 
+- The console user agent is the PS4 leanback shell's. WebKitGTK rejects that
+  exact string (its empty `PS4/` product version fails the RFC 7231 User-Agent
+  grammar check and WebKit silently keeps its default UA, which YouTube bounces
+  to youtube.com), so on Linux the header and `navigator.userAgent` say
+  `Sony PS4/1.0`; YouTube serves the TV app to both.
 - The window starts on `about:blank`, registers the platform's request
   filtering (WebView2 `WebResourceRequested` interception on Windows, a
-  compiled `WKContentRuleList` on macOS) and the document-start scripts, then
+  compiled `WKContentRuleList` on macOS, the same rule list compiled through
+  `WebKitUserContentFilterStore` on Linux) and the document-start scripts, then
   navigates to `https://www.youtube.com/tv`. Filtering is scoped to HTTPS
   YouTube origins; Google sign-in documents are never blocked.
 - On macOS the controller is handled entirely in the page:
@@ -162,6 +229,15 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   reads) to the focused element, using the same mapping, 80 ms debounce and
   350 ms / 110 ms auto-repeat as the Windows bridge. Nothing is injected at the
   OS level, so it needs no permissions and cannot type into other apps.
+- On Linux the same in-page key synthesis runs, but the pad state comes from
+  `native/pake_gamepad_linux.rs`: one thread polls every connected pad through
+  [gilrs](https://gitlab.com/gilrs-project/gilrs) (evdev/udev with SDL-style
+  standard mappings, hot-plug) every 16 ms, merges them into one logical pad in
+  the Gamepad API's standard bit layout, and emits it to the page as a
+  `pake:gamepad` Tauri event on every change plus a 100 ms heartbeat while held;
+  the page drops state older than 300 ms. If the WebKit build does expose the
+  Gamepad API, the page merges both sources so a pad seen twice never fires
+  twice. Nothing is injected at the OS level.
 - On Windows, the controller thread merges two sources every 16 ms into one logical pad
   (buttons ORed, strongest stick wins, so a press seen by both never fires
   twice): the **page's Gamepad API** (`native/tv-gamepad.js` forwards state to
@@ -225,7 +301,8 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
 - Desktop LT/RT map to F7/F8, which seek 10 seconds and resume. On Windows,
   native XInput trigger state is merged with page Gamepad state before dispatch.
 - Profile data (cookies, blocker cache, settings) lives in `%APPDATA%\YouTubeTV`
-  on Windows and `~/Library/Application Support/YouTubeTV` on macOS.
+  on Windows, `~/Library/Application Support/YouTubeTV` on macOS and
+  `~/.config/YouTubeTV` on Linux.
 
 ## Troubleshooting
 
@@ -242,6 +319,17 @@ scripts/build.cjs  ──►  scripts/prepare.cjs  ──►  node_modules/pake-
   and show up in **System Settings → Game Controllers**; press a button after
   the app is in front (the Gamepad API only exposes a pad once it has been
   used), and keep the app in the foreground.
+- **Controller does nothing (Linux)** — check that the kernel sees the pad
+  (`ls /dev/input/by-id/ | grep -i -E 'joystick|gamepad'`, or `evtest`), and
+  start the app from a terminal: a `[YouTubeTV] Controller support unavailable`
+  line means the input subsystem could not be opened (udev / `/dev/input`
+  permissions). Bluetooth Xbox pads work best with the `xpadneo` driver.
+- **Blank or flickering window, or choppy video (Linux)** — see the Wayland and
+  NVIDIA note under *Install (Linux)*: Pake's WebKit safe mode is on by default;
+  `PAKE_LINUX_WEBKIT_SAFE_MODE=0` turns the accelerated renderer back on,
+  `PAKE_LINUX_WEBKIT_SAFE_MODE=1` forces safe mode on niri.
+- **AppImage does not start (Linux)** — install FUSE 2 (`libfuse2t64` /
+  `fuse2`) or run `./YouTubeTV-*.AppImage --appimage-extract-and-run`.
 - **Ads still appear** — open the Shield panel, confirm "Blocking is on" (on
   Windows the counters also increase; WebKit does not expose per-rule counts),
   then try **Update filters** and restart. Server-side stitched ads are not

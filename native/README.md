@@ -1,13 +1,16 @@
-# Native adapters (Windows and macOS)
+# Native adapters (Windows, macOS and Linux)
 
 `core/` is a reusable Rust library with no Tauri/WebView2/WKWebView dependency,
 using `adblock = 0.13.3` with the thread-safe engine configuration.
-`pake_adblock.rs` is the Windows WebView2 adapter and `pake_adblock_macos.rs`
-the macOS WKWebView adapter; `ui.js` provides the Shield panel and the
+`pake_adblock.rs` is the Windows WebView2 adapter, `pake_adblock_macos.rs`
+the macOS WKWebView adapter and `pake_adblock_linux.rs` the Linux WebKitGTK
+adapter; `ui.js` provides the Shield panel and the
 Ctrl+Alt+B / Cmd+Option+B shortcut; `pake_xinput.rs` is the Windows XInput
-controller bridge; `tv-gamepad.js` reads the controller through the page's
+controller bridge and `pake_gamepad_linux.rs` the Linux evdev (gilrs) reader;
+`tv-gamepad.js` reads the controller through the page's
 Gamepad API (forwarded to the bridge on Windows, turned into key events in the
-page on macOS); `tv-navigator.js` is the document-start navigator spoof. All
+page on macOS and, from the native reader's events, on Linux);
+`tv-navigator.js` is the document-start navigator spoof. All
 are copied into `node_modules/pake-cli/src-tauri` by `scripts/prepare.cjs`,
 which picks the platform adapter.
 
@@ -24,11 +27,11 @@ client's ad-media rule (below).
 The app starts on about:blank, registers the platform's request filtering and
 document-start scripts, then navigates to YouTube TV after registration.
 Filtering is enabled by default. Changing it persists a native setting, replaces
-the document-start script (Windows) or the native rule list (macOS), and
+the document-start script (Windows) or the native rule list (macOS, Linux), and
 reloads the page. Browser profiles are not cleared. Cookies and settings live in
-the `%APPDATA%/YouTubeTV` (Windows) or `~/Library/Application Support/YouTubeTV`
-(macOS) profile; blocker files are in its `pake-adblock` subdirectory. Login is
-still subject to Google's session expiry.
+the `%APPDATA%/YouTubeTV` (Windows), `~/Library/Application Support/YouTubeTV`
+(macOS) or `~/.config/YouTubeTV` (Linux) profile; blocker files are in its
+`pake-adblock` subdirectory. Login is still subject to Google's session expiry.
 
 ### macOS
 
@@ -49,6 +52,18 @@ rule: ordinary `videoplayback` and `initplayback` without the `oad=` ad marker,
 and all `youtubei` responses other than `player/ad_break`, are never blocked
 (enforced by the adapter's unit test). Without it, an ad whose metadata was
 not pruned (typically a post-roll) could still play on macOS.
+
+### Linux
+
+WebKitGTK has no per-request interception either, but it accepts the same
+content-extension JSON as WKContentRuleList through
+`WebKitUserContentFilterStore`. `pake_adblock_linux.rs` compiles the identical
+rule list (a unit test asserts the two adapters' `CONTENT_RULES` match) into
+`~/.config/YouTubeTV/pake-adblock/webkit-filters` and attaches it to the
+window's `WebKitUserContentManager` before the first navigation; the scriptlet
+script is an initialization script as on macOS. webkit2gtk-rs 2.0 does not bind
+the filter store, so those four calls go through the `webkit2gtk-sys` FFI on the
+GTK main thread. Match counters are unavailable, as on macOS.
 
 ### Late-ad response fix
 
@@ -71,15 +86,15 @@ the bundle fingerprint also includes the local rules.
   exceptions and base64 resource redirects are supported. Blocked requests
   receive 403. Newer WebView2 APIs include worker/frame sources; older runtimes
   use the legacy filter. Referrer-less nested-frame attribution is approximate.
-- On macOS, network blocking is limited to the fixed rule list above; the
-  downloaded filter lists only feed the scriptlets and cosmetic rules.
+- On macOS and Linux, network blocking is limited to the fixed rule list above;
+  the downloaded filter lists only feed the scriptlets and cosmetic rules.
 - Main-world, document-start scriptlets and domain-specific CSS are applied.
   Only procedural actions convertible to ordinary CSS are supported; there is no
   full uBO procedural DOM engine, response-body rewriting, CSP/header
   manipulation or Brave Shields parity.
 - Server-stitched ads are not guaranteed to be removed. Never infer success just
   from a session where no ad was served.
-- Linux is not supported. No Skip-button clicking loop on either platform.
+- No Skip-button clicking loop on any platform.
 - Stats contain counts, bundle fingerprint, runtime/version and a hashed rule ID;
   no request URLs, cookies, authorization headers or browsing history are logged.
 
@@ -117,15 +132,30 @@ recognizes through the Gamepad API, so no native code, OS input injection or
 accessibility permission is involved. Triggers raise the `pake:captions-toggle`
 / `pake:aspect-toggle` events for `tv-player.js` on both platforms.
 
-The Windows state machine has unit tests (`cargo test --lib pake_xinput`
-inside the patched runtime); the page script is tested by
-`scripts/test-gamepad.cjs` (part of `npm test`), which runs it in a fake page
-with a scripted gamepad on both platform paths.
+On Linux, Debian and Ubuntu build WebKitGTK without the Gamepad API, so
+`pake_gamepad_linux.rs` reads the pads natively: one thread polls every
+connected pad through gilrs (evdev/udev, SDL-style standard mapping, hot-plug)
+every 16 ms, folds analog triggers and hat axes into the standard-mapping bits,
+merges all pads into one logical pad (buttons ORed, strongest stick wins) and
+emits it to the page as a `pake:gamepad` Tauri event on every change plus a
+100 ms heartbeat while input is held. `tv-gamepad.js` (host `linux`) feeds that
+state into the same in-page state machine as macOS, drops it after 300 ms
+without a heartbeat, and merges in the Gamepad API if the WebKit build exposes
+it. The window's capability grants `core:event:allow-listen` for this. No OS
+input is injected.
+
+The Windows and Linux native modules have unit tests (`cargo test --lib
+pake_xinput::tests` / `pake_gamepad::tests` inside the patched runtime); the
+page script is tested by `scripts/test-gamepad.cjs` (part of `npm test`), which
+runs it in a fake page with a scripted gamepad on all three platform paths.
 
 ## Build and test
 
 From the project root with Node 22+ and Rust 1.95 or newer, with Visual Studio
-C++ build tools and WebView2 on Windows or Xcode Command Line Tools on macOS:
+C++ build tools and WebView2 on Windows, Xcode Command Line Tools on macOS, or
+Tauri's Linux prerequisites (`libwebkit2gtk-4.1-dev`,
+`libayatana-appindicator3-dev`, `librsvg2-dev`, `patchelf`, `libssl-dev`,
+`libxdo-dev`, `libudev-dev`; `libarchive-tools` for the Arch package) on Linux:
 
 ```sh
 npm ci --ignore-scripts
@@ -134,9 +164,14 @@ npm test
 ```
 
 On Windows, set `CARGO_TARGET_DIR` to `.build-target` before `npm test`. The
-build produces `YouTubeTV.exe`/`YouTubeTV.msi` on Windows or an Apple-silicon
-`YouTubeTV.dmg` on macOS. Local macOS builds are ad-hoc signed; public
-distribution still requires a Developer ID signature and Apple notarization.
+build produces `YouTubeTV.exe`/`YouTubeTV.msi` on Windows, an Apple-silicon
+`YouTubeTV.dmg` on macOS, or `youtubetv.deb` / `youtubetv.AppImage` /
+`youtubetv-<pkgver>-1-x86_64.pkg.tar.zst` on Linux (`--targets deb,appimage,zst`;
+`prepare.cjs` patches Pake's Arch packager to write a hyphen-free `pkgver`,
+`2.2.0beta5`, because pacman rejects hyphens there while Tauri requires semver,
+and the AppImage bundles GStreamer via Tauri's `bundleMediaFramework`). Local macOS builds are
+ad-hoc signed; public distribution still requires a Developer ID signature and
+Apple notarization.
 
 `scripts/prepare.cjs` checks Pake 3.15.7, applies the native background/startup
 patch and explicit anchor-checked edits, copies the checked-in sources, and
