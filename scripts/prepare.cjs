@@ -142,6 +142,15 @@ replace('capabilities/default.json', '    "core:path:default"\n', '    "core:pat
 // --- Linux bundles: ship GStreamer (codecs) inside the AppImage so playback does not
 // depend on the host's plugin ABI matching the bundled WebKitGTK ---
 replace('tauri.linux.conf.json', '    "linux": {\n      "deb": {', '    "linux": {\n      "appimage": { "bundleMediaFramework": true },\n      "deb": {');
+// .deb / .rpm metadata: Tauri otherwise fills Maintainer and Description from Pake's own crate
+// (Maintainer comes from Cargo.toml authors, so that is renamed too).
+replace('Cargo.toml', 'authors = ["Tw93"]', 'authors = ["ltanedo (youtube-tv-xinput)"]');
+replace('tauri.linux.conf.json', '    "active": true,\n', `    "active": true,
+    "publisher": "ltanedo",
+    "homepage": "https://github.com/ltanedo/youtube-tv-xinput",
+    "shortDescription": "YouTube TV (leanback) client with game controller support and ad blocking",
+    "longDescription": "The YouTube TV / leanback interface (youtube.com/tv) as a desktop app, with Xbox and other game controllers read natively, a built-in ad blocker (EasyList / uBlock Origin filters and scriptlets) and fullscreen playback.",
+`);
 // Windows adapters: marker-delimited so feature changes replace, never duplicate, the block.
 markerBlock('webview2-com = "0.38"\n', `windows = { version = "=0.61.3", features = [
   "Win32_System_Com",
